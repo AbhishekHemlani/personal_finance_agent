@@ -34,6 +34,10 @@ npm run build
 
 No backend or bank connection is required for this prototype. A future production version should use a secure aggregator such as Plaid, Teller, or Finicity for bank connectivity and should never handle raw banking credentials directly.
 
+## Backend plan
+
+The backend architecture, app workflow, data model, and implementation roadmap are documented in [`docs/backend-workflow.md`](docs/backend-workflow.md).
+
 ## iPhone install
 
 After the app is deployed over HTTPS:
