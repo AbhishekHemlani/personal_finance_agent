@@ -38,6 +38,25 @@ No backend or bank connection is required for this prototype. A future productio
 
 The backend architecture, app workflow, data model, and implementation roadmap are documented in [`docs/backend-workflow.md`](docs/backend-workflow.md).
 
+The first FastAPI/Postgres backend is in [`backend/`](backend/). It includes API endpoints for transactions, budgets, CSV imports, purchase decisions, and a reserved bank-sync endpoint.
+
+Run Postgres:
+
+```bash
+docker compose up -d postgres
+```
+
+Run the API:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+API docs are available at `http://127.0.0.1:8000/docs`.
+
 ## iPhone install
 
 After the app is deployed over HTTPS:
