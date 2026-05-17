@@ -46,6 +46,8 @@ Run Postgres:
 docker compose up -d postgres
 ```
 
+The local Postgres container uses host port `5433`, so it will not collide with another Postgres already running on `5432`.
+
 Run the API:
 
 ```bash

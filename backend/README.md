@@ -24,6 +24,8 @@ Run the API:
 uvicorn backend.app.main:app --reload --port 8000
 ```
 
+The project Postgres container is exposed on host port `5433` to avoid colliding with any existing local Postgres on `5432`.
+
 Health check:
 
 ```bash
