@@ -1,6 +1,6 @@
 # Ledgerly Personal Finance Tracker
 
-A browser-based personal finance prototype for tracking spending, category budgets, upcoming payments, and net worth.
+A React/Vite personal finance prototype for tracking spending, category budgets, upcoming payments, and net worth.
 
 ## Current capabilities
 
@@ -13,7 +13,17 @@ A browser-based personal finance prototype for tracking spending, category budge
 
 ## Running locally
 
-Open `index.html` in a browser.
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the dev server:
+
+```bash
+npm run dev
+```
 
 No backend or bank connection is required for this prototype. A future production version should use a secure aggregator such as Plaid, Teller, or Finicity for bank connectivity and should never handle raw banking credentials directly.
 
