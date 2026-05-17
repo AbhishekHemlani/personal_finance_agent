@@ -9,7 +9,8 @@ A React/Vite personal finance prototype for tracking spending, category budgets,
 - Track monthly category budgets, including a coffee-specific allowance check.
 - Schedule future payments such as rent, subscriptions, utilities, and card payments.
 - Maintain a simple assets-versus-debts net worth snapshot.
-- Store data locally in the browser with `localStorage`.
+- Store transactions, budgets, CSV imports, and purchase decisions through FastAPI/Postgres.
+- Store future payments and the net-worth draft locally until those backend endpoints are added.
 - Install to an iPhone home screen as a Progressive Web App.
 
 ## Running locally
@@ -26,13 +27,15 @@ Start the dev server:
 npm run dev
 ```
 
+The React app expects the API at `http://127.0.0.1:8000/api` by default. Override it with `VITE_API_BASE_URL` if needed.
+
 Build the static production files:
 
 ```bash
 npm run build
 ```
 
-No backend or bank connection is required for this prototype. A future production version should use a secure aggregator such as Plaid, Teller, or Finicity for bank connectivity and should never handle raw banking credentials directly.
+The backend is required for transaction, budget, CSV, and purchase-decision workflows. A future production bank connection should use a secure aggregator such as Plaid, Teller, or Finicity and should never handle raw banking credentials directly.
 
 ## Backend plan
 

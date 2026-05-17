@@ -1,45 +1,78 @@
-import { useMemo, useState } from "react";
-import {
-  categories,
-  categorySpend,
-  checkCoffeePurchase,
-  createDemoState,
-  defaultBudgets,
-  formatDate,
-  initialState,
-  money,
-  parseStatementCsv,
-  summarizeFinances,
-  today,
-} from "./finance";
-import { useFinanceStore } from "./useFinanceStore";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api } from "./api";
+import { categories, defaultBudgets, formatDate, money, today } from "./finance";
+
+const localStorageKey = "ledgerly-local-planning-v1";
+
+const initialLocalState = {
+  payments: [],
+  netWorth: { cash: 0, investments: 0, assets: 0, debts: 0 },
+};
 
 export default function App() {
-  const [state, setState] = useFinanceStore();
+  const [transactions, setTransactions] = useState([]);
+  const [budgetSummary, setBudgetSummary] = useState(null);
+  const [localState, setLocalState] = useState(loadLocalState);
   const [search, setSearch] = useState("");
   const [coffeePrice, setCoffeePrice] = useState("6.50");
   const [coffeeResult, setCoffeeResult] = useState("Set a price to see whether it fits your monthly coffee budget.");
-  const summary = useMemo(() => summarizeFinances(state), [state]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [status, setStatus] = useState("Connecting to backend...");
+  const activeMonth = today().slice(0, 7);
 
-  function addTransaction(formData) {
-    setState((current) => ({
-      ...current,
-      transactions: [
-        {
-          id: crypto.randomUUID(),
-          date: formData.get("date"),
-          merchant: formData.get("merchant").trim(),
-          category: formData.get("category"),
-          amount: Number(formData.get("amount")),
-          note: formData.get("note").trim(),
-        },
-        ...current.transactions,
-      ],
-    }));
+  const loadBackendState = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [transactionRows, summary] = await Promise.all([
+        api.listTransactions(),
+        api.budgetSummary(activeMonth),
+      ]);
+      setTransactions(transactionRows.map(fromApiTransaction));
+      setBudgetSummary(summary);
+      setStatus("Backend connected. Data is saved in Postgres.");
+    } catch (error) {
+      setStatus(`Backend unavailable: ${friendlyError(error)}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeMonth]);
+
+  useEffect(() => {
+    loadBackendState();
+  }, [loadBackendState]);
+
+  useEffect(() => {
+    localStorage.setItem(localStorageKey, JSON.stringify(localState));
+  }, [localState]);
+
+  const summary = useMemo(() => {
+    const coffee = budgetSummary?.categories.find((category) => category.category_name === "Coffee");
+    return {
+      netWorth:
+        Number(localState.netWorth.cash || 0) +
+        Number(localState.netWorth.investments || 0) +
+        Number(localState.netWorth.assets || 0) -
+        Number(localState.netWorth.debts || 0),
+      monthSpend: Number(budgetSummary?.total_spent || 0),
+      budgetLeft: Number(budgetSummary?.total_remaining || 0),
+      coffeeLeft: Number(coffee?.remaining || 0),
+    };
+  }, [budgetSummary, localState.netWorth]);
+
+  async function addTransaction(formData) {
+    await api.createTransaction({
+      date: formData.get("date"),
+      merchant: formData.get("merchant").trim(),
+      category_name: formData.get("category"),
+      amount: Number(formData.get("amount")),
+      description: formData.get("note").trim(),
+      direction: formData.get("category") === "Income" ? "income" : "expense",
+    });
+    await loadBackendState();
   }
 
   function addPayment(formData) {
-    setState((current) => ({
+    setLocalState((current) => ({
       ...current,
       payments: [
         ...current.payments,
@@ -55,7 +88,7 @@ export default function App() {
   }
 
   function updateNetWorth(formData) {
-    setState((current) => ({
+    setLocalState((current) => ({
       ...current,
       netWorth: {
         cash: Number(formData.get("cash") || 0),
@@ -66,43 +99,91 @@ export default function App() {
     }));
   }
 
-  function updateBudget(category, amount) {
-    setState((current) => ({
-      ...current,
-      budgets: { ...current.budgets, [category]: Number(amount || 0) },
-    }));
+  async function updateBudget(category, amount) {
+    await api.updateBudget({
+      category_name: category,
+      amount: Number(amount || 0),
+      month: activeMonth,
+    });
+    await loadBackendState();
   }
 
-  function removeTransaction(id) {
-    setState((current) => ({
-      ...current,
-      transactions: current.transactions.filter((transaction) => transaction.id !== id),
-    }));
+  async function removeTransaction(id) {
+    await api.deleteTransaction(id);
+    await loadBackendState();
   }
 
   function removePayment(id) {
-    setState((current) => ({
+    setLocalState((current) => ({
       ...current,
       payments: current.payments.filter((payment) => payment.id !== id),
     }));
   }
 
-  function importCsv(file) {
+  async function importCsv(file) {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imported = parseStatementCsv(String(reader.result));
-      setState((current) => ({
-        ...current,
-        transactions: [...imported, ...current.transactions],
-      }));
-    };
-    reader.readAsText(file);
+    await api.importCsv(file);
+    await loadBackendState();
   }
 
-  function resetData() {
-    setState({ ...initialState, budgets: { ...defaultBudgets } });
+  async function checkCoffee() {
+    const decision = await api.purchaseDecision({
+      category_name: "Coffee",
+      amount: Number(coffeePrice || 0),
+      date: today(),
+    });
+    setCoffeeResult(decision.message);
+    await loadBackendState();
+  }
+
+  async function seedDemo() {
+    const month = today().slice(0, 8);
+    const demoTransactions = [
+      ["Blue Bottle Coffee", "Coffee", 7.25, "03"],
+      ["Starbucks", "Coffee", 5.9, "07"],
+      ["Rent payment", "Rent", 2100, "01"],
+      ["Trader Joe's", "Groceries", 86.31, "06"],
+      ["Netflix", "Subscriptions", 22.99, "08"],
+      ["Local ramen", "Eating out", 34.4, "10"],
+      ["Uber", "Transport", 18.75, "11"],
+    ];
+
+    await Promise.all(
+      demoTransactions.map(([merchant, category, amount, day]) =>
+        api.createTransaction({
+          date: `${month}${day}`,
+          merchant,
+          category_name: category,
+          amount,
+          description: "Demo transaction",
+          direction: "expense",
+        }),
+      ),
+    );
+
+    setLocalState((current) => ({
+      ...current,
+      payments: [
+        { id: crypto.randomUUID(), date: `${month}25`, name: "Credit card payment", category: "Other", amount: 850 },
+        { id: crypto.randomUUID(), date: `${month}28`, name: "Internet", category: "Utilities", amount: 75 },
+      ],
+      netWorth: { cash: 6200, investments: 18400, assets: 2000, debts: 3900 },
+    }));
+    await loadBackendState();
+  }
+
+  async function resetBudgets() {
+    await Promise.all(
+      Object.entries(defaultBudgets).map(([category, amount]) =>
+        api.updateBudget({
+          category_name: category,
+          amount,
+          month: activeMonth,
+        }),
+      ),
+    );
     setCoffeeResult("Set a price to see whether it fits your monthly coffee budget.");
+    await loadBackendState();
   }
 
   return (
@@ -119,37 +200,28 @@ export default function App() {
               Upload CSV
             </label>
             <input id="csvUpload" type="file" accept=".csv,text/csv" onChange={(event) => importCsv(event.target.files[0])} />
-            <button type="button" onClick={() => setState(createDemoState())}>
+            <button type="button" onClick={seedDemo}>
               Load demo
             </button>
           </div>
         </section>
 
+        <StatusBanner status={status} isLoading={isLoading} onRefresh={loadBackendState} />
         <Metrics summary={summary} />
 
         <section className="workspace-grid">
           <TransactionForm onSubmit={addTransaction} />
-          <CoffeeCoach
-            price={coffeePrice}
-            result={coffeeResult}
-            onPriceChange={setCoffeePrice}
-            onCheck={() => setCoffeeResult(checkCoffeePurchase(state, Number(coffeePrice || 0)))}
-          />
+          <CoffeeCoach price={coffeePrice} result={coffeeResult} onPriceChange={setCoffeePrice} onCheck={checkCoffee} />
         </section>
 
         <section className="workspace-grid">
-          <BudgetPanel budgets={state.budgets} transactions={state.transactions} onUpdateBudget={updateBudget} onReset={resetData} />
-          <NetWorthPanel netWorth={state.netWorth} onSubmit={updateNetWorth} />
+          <BudgetPanel summary={budgetSummary} onUpdateBudget={updateBudget} onReset={resetBudgets} />
+          <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
         </section>
 
-        <PaymentPlanner payments={state.payments} onSubmit={addPayment} onRemove={removePayment} />
+        <PaymentPlanner payments={localState.payments} onSubmit={addPayment} onRemove={removePayment} />
 
-        <TransactionTable
-          transactions={state.transactions}
-          search={search}
-          onSearch={setSearch}
-          onRemove={removeTransaction}
-        />
+        <TransactionTable transactions={transactions} search={search} onSearch={setSearch} onRemove={removeTransaction} />
       </main>
     </div>
   );
@@ -175,10 +247,21 @@ function Sidebar() {
         <a href="#net-worth">Net worth</a>
       </nav>
       <div className="sidebar-note">
-        <span>Privacy first</span>
-        <p>Your data stays in this browser for now. No banking connection is used in this prototype.</p>
+        <span>Backend connected</span>
+        <p>Transactions, budgets, CSV imports, and purchase decisions now use the FastAPI backend.</p>
       </div>
     </aside>
+  );
+}
+
+function StatusBanner({ status, isLoading, onRefresh }) {
+  return (
+    <section className="status-banner">
+      <span>{isLoading ? "Syncing..." : status}</span>
+      <button type="button" className="text-button" onClick={onRefresh}>
+        Refresh
+      </button>
+    </section>
   );
 }
 
@@ -186,7 +269,7 @@ function Metrics({ summary }) {
   return (
     <section className="metric-grid" aria-label="Finance summary">
       <Metric title="Net worth" value={summary.netWorth} caption="Assets minus debts" />
-      <Metric title="This month spent" value={summary.monthSpend} caption="Across all categories" />
+      <Metric title="This month spent" value={summary.monthSpend} caption="Across backend transactions" />
       <Metric
         title="Budget left"
         value={summary.budgetLeft}
@@ -223,9 +306,9 @@ function TransactionForm({ onSubmit }) {
       </div>
       <form
         className="form-grid"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          onSubmit(new FormData(event.currentTarget));
+          await onSubmit(new FormData(event.currentTarget));
           event.currentTarget.reset();
           event.currentTarget.date.value = today();
         }}
@@ -278,7 +361,9 @@ function CoffeeCoach({ price, result, onPriceChange, onCheck }) {
   );
 }
 
-function BudgetPanel({ budgets, transactions, onUpdateBudget, onReset }) {
+function BudgetPanel({ summary, onUpdateBudget, onReset }) {
+  const rows = summary?.categories || [];
+
   return (
     <article className="panel" id="budgets">
       <div className="panel-header">
@@ -291,12 +376,13 @@ function BudgetPanel({ budgets, transactions, onUpdateBudget, onReset }) {
         </button>
       </div>
       <div className="budget-list">
-        {Object.entries(budgets).map(([category, budget]) => {
-          const spent = categorySpend(transactions, category);
+        {rows.map((row) => {
+          const spent = Number(row.spent);
+          const budget = Number(row.budget);
           const fill = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
           return (
-            <div className="budget-row" key={category}>
-              <strong>{category}</strong>
+            <div className="budget-row" key={row.category_id}>
+              <strong>{row.category_name}</strong>
               <div>
                 <div className={`meter${spent > budget ? " over" : ""}`} title={`${money(spent)} spent of ${money(budget)}`}>
                   <span style={{ "--fill": `${fill}%` }} />
@@ -306,12 +392,12 @@ function BudgetPanel({ budgets, transactions, onUpdateBudget, onReset }) {
                 </small>
               </div>
               <input
-                aria-label={`${category} budget`}
+                aria-label={`${row.category_name} budget`}
                 type="number"
                 min="0"
                 step="1"
                 value={budget}
-                onChange={(event) => onUpdateBudget(category, event.target.value)}
+                onChange={(event) => onUpdateBudget(row.category_name, event.target.value)}
               />
             </div>
           );
@@ -511,4 +597,27 @@ function CategoryField() {
       </select>
     </label>
   );
+}
+
+function fromApiTransaction(transaction) {
+  return {
+    id: transaction.id,
+    date: transaction.date,
+    merchant: transaction.merchant,
+    category: transaction.category?.name || "Other",
+    amount: Number(transaction.amount),
+    note: transaction.description || "",
+  };
+}
+
+function loadLocalState() {
+  const saved = localStorage.getItem(localStorageKey);
+  return saved ? { ...initialLocalState, ...JSON.parse(saved) } : initialLocalState;
+}
+
+function friendlyError(error) {
+  if (error instanceof TypeError) {
+    return "start FastAPI on http://127.0.0.1:8000, then refresh.";
+  }
+  return error.message;
 }
