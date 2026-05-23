@@ -283,7 +283,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -294,13 +295,106 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: 3px solid rgba(6, 122, 143, 0.18);
   border-color: var(--teal);
 }
 
+textarea {
+  min-height: 58px;
+  padding: 12px;
+  resize: vertical;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .wide {
   grid-column: span 2;
+}
+
+.expense-chat {
+  display: grid;
+  gap: 14px;
+}
+
+.chat-stream {
+  min-height: 210px;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfaf5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  border-radius: 8px;
+  padding: 11px 13px;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: #eef3ef;
+  color: #2f4439;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: var(--ink);
+  color: white;
+}
+
+.receipt-row,
+.chat-input-row {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+}
+
+.receipt-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.receipt-button {
+  min-height: 40px;
+  width: max-content;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffefa;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  font-size: 0.92rem;
+}
+
+.receipt-button input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+}
+
+.chat-input-row {
+  grid-template-columns: minmax(0, 1fr) 140px;
+}
+
+.chat-input-row button {
+  min-height: 58px;
 }
 
 .coach-layout {
@@ -471,5 +565,14 @@ th:last-child {
 
   .budget-row {
     grid-template-columns: 1fr;
+  }
+
+  .chat-input-row,
+  .receipt-row {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-bubble {
+    max-width: 100%;
   }
 }

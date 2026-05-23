@@ -59,14 +59,14 @@ export default function App() {
     };
   }, [budgetSummary, localState.netWorth]);
 
-  async function addTransaction(formData) {
+  async function addTransaction(expense) {
     await api.createTransaction({
-      date: formData.get("date"),
-      merchant: formData.get("merchant").trim(),
-      category_name: formData.get("category"),
-      amount: Number(formData.get("amount")),
-      description: formData.get("note").trim(),
-      direction: formData.get("category") === "Income" ? "income" : "expense",
+      date: expense.date,
+      merchant: expense.merchant,
+      category_name: expense.category,
+      amount: Number(expense.amount),
+      description: expense.note,
+      direction: expense.category === "Income" ? "income" : "expense",
     });
     await loadBackendState();
   }
@@ -296,41 +296,131 @@ function Metric({ title, value, caption, alert = false }) {
 }
 
 function TransactionForm({ onSubmit }) {
+  const [message, setMessage] = useState("");
+  const [receipt, setReceipt] = useState(null);
+  const [chatMessages, setChatMessages] = useState([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "Tell me what you spent, like \"coffee at Blue Bottle for 6.50\". You can also attach a receipt.",
+    },
+  ]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function submitExpense(event) {
+    event.preventDefault();
+    const text = message.trim();
+
+    if (!text && receipt) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: `Uploaded receipt: ${receipt.name}`,
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Receipt upload is ready, but OCR is not wired yet. Add a short note like \"coffee at Blue Bottle for 6.50\" and I will log it.",
+        },
+      ]);
+      return;
+    }
+
+    if (!text) return;
+
+    const parsed = parseExpenseMessage(text, receipt);
+    setChatMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        text: receipt ? `${text} [receipt: ${receipt.name}]` : text,
+      },
+    ]);
+
+    if (!parsed.amount) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "I need an amount before I can log that. Try something like \"lunch at Sweetgreen for 14.20\".",
+        },
+      ]);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onSubmit(parsed);
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: `Logged ${money(parsed.amount)} at ${parsed.merchant} under ${parsed.category}.`,
+        },
+      ]);
+      setMessage("");
+      setReceipt(null);
+      event.currentTarget.reset();
+    } catch (error) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: `I could not log that yet: ${friendlyError(error)}`,
+        },
+      ]);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <article className="panel transaction-panel" id="transactions">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Daily tracking</p>
-          <h2>Add a transaction</h2>
+          <h2>Chat expense logger</h2>
         </div>
       </div>
       <form
-        className="form-grid"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          await onSubmit(new FormData(event.currentTarget));
-          event.currentTarget.reset();
-          event.currentTarget.date.value = today();
-        }}
+        className="expense-chat"
+        onSubmit={submitExpense}
       >
-        <label>
-          Date
-          <input name="date" type="date" defaultValue={today()} required />
-        </label>
-        <label>
-          Merchant
-          <input name="merchant" type="text" placeholder="Blue Bottle" required />
-        </label>
-        <CategoryField />
-        <label>
-          Amount
-          <input name="amount" type="number" step="0.01" min="0.01" placeholder="6.50" required />
-        </label>
-        <label className="wide">
-          Note
-          <input name="note" type="text" placeholder="Optional context" />
-        </label>
-        <button type="submit">Add spend</button>
+        <div className="chat-stream" aria-live="polite">
+          {chatMessages.map((item) => (
+            <div className={`chat-bubble ${item.role}`} key={item.id}>
+              {item.text}
+            </div>
+          ))}
+        </div>
+        <div className="receipt-row">
+          <label className="receipt-button">
+            Upload receipt
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(event) => setReceipt(event.target.files?.[0] || null)}
+            />
+          </label>
+          <span>{receipt ? receipt.name : "No receipt attached"}</span>
+        </div>
+        <div className="chat-input-row">
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="Example: coffee at Blue Bottle for 6.50"
+            rows="2"
+          />
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Logging..." : "Send"}
+          </button>
+        </div>
       </form>
     </article>
   );
@@ -620,4 +710,75 @@ function friendlyError(error) {
     return "start FastAPI on http://127.0.0.1:8000, then refresh.";
   }
   return error.message;
+}
+
+function parseExpenseMessage(text, receipt) {
+  const amountMatch = text.match(/(?:\$|for\s+)?(\d+(?:\.\d{1,2})?)/i);
+  const amount = amountMatch ? Number(amountMatch[1]) : 0;
+  const category = inferCategory(text);
+  const merchant = inferMerchant(text, amountMatch?.[0]);
+  const receiptNote = receipt ? `Receipt attached: ${receipt.name}` : "";
+
+  return {
+    date: inferDate(text),
+    merchant,
+    category,
+    amount,
+    note: [text, receiptNote].filter(Boolean).join(" | "),
+  };
+}
+
+function inferDate(text) {
+  const lower = text.toLowerCase();
+  const date = new Date();
+  if (lower.includes("yesterday")) {
+    date.setDate(date.getDate() - 1);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function inferCategory(text) {
+  const lower = text.toLowerCase();
+  const rules = [
+    ["Coffee", ["coffee", "latte", "espresso", "cafe", "starbucks", "blue bottle", "dunkin"]],
+    ["Rent", ["rent", "landlord", "apartment"]],
+    ["Groceries", ["grocery", "groceries", "trader joe", "whole foods", "market"]],
+    ["Eating out", ["lunch", "dinner", "restaurant", "doordash", "ubereats", "sweetgreen", "pizza"]],
+    ["Subscriptions", ["subscription", "netflix", "spotify", "hulu"]],
+    ["Transport", ["uber", "lyft", "gas", "metro", "train", "bus"]],
+    ["Utilities", ["electric", "internet", "utility", "water", "phone"]],
+    ["Shopping", ["amazon", "target", "walmart", "clothes", "shopping"]],
+    ["Income", ["paycheck", "payroll", "salary", "deposit"]],
+  ];
+  return rules.find(([, keywords]) => keywords.some((keyword) => lower.includes(keyword)))?.[0] || "Other";
+}
+
+function inferMerchant(text, amountText) {
+  const merchantMatch = text.match(/\b(?:at|from)\s+(.+?)(?:\s+(?:for|on)\s+|\s+\$?\d|$)/i);
+  if (merchantMatch?.[1]) {
+    return titleCase(merchantMatch[1].trim());
+  }
+
+  let clean = text
+    .replace(amountText || "", "")
+    .replace(/\b(spent|paid|bought|buy|for|on|at|from|yesterday|today)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  clean = clean.split(/\b(coffee|latte|espresso|lunch|dinner|groceries|rent|subscription|gas)\b/i)[0].trim() || clean;
+  if (!clean) return "Manual expense";
+
+  return clean
+    .split(" ")
+    .slice(0, 5)
+    .map(titleCase)
+    .join(" ");
+}
+
+function titleCase(value) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }

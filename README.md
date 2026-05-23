@@ -4,7 +4,8 @@ A React/Vite personal finance prototype for tracking spending, category budgets,
 
 ## Current capabilities
 
-- Add transactions manually.
+- Add transactions through a chat-style daily tracker with freeform expense text.
+- Attach receipts to the daily tracker flow while full OCR is still pending.
 - Upload CSV statements and auto-categorize common purchases.
 - Track monthly category budgets, including a coffee-specific allowance check.
 - Schedule future payments such as rent, subscriptions, utilities, and card payments.
