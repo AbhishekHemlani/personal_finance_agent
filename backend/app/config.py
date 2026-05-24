@@ -8,6 +8,14 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     database_url: str = "postgresql+psycopg://ledgerly:ledgerly@localhost:5433/ledgerly"
     cors_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
+    token_encryption_key: str | None = None
+    plaid_client_id: str | None = None
+    plaid_secret: str | None = None
+    plaid_environment: str = "sandbox"
+    plaid_products: list[str] = ["transactions"]
+    plaid_country_codes: list[str] = ["US"]
+    s3_bucket: str | None = None
+    s3_region: str = "us-east-1"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="LEDGERLY_")
 

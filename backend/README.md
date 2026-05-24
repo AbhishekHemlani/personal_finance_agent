@@ -26,6 +26,12 @@ uvicorn backend.app.main:app --reload --port 8000
 
 The project Postgres container is exposed on host port `5433` to avoid colliding with any existing local Postgres on `5432`.
 
+For encrypted bank tokens, generate a Fernet key and add it to `.env`:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
 Health check:
 
 ```bash
@@ -113,10 +119,31 @@ Import example:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/imports/csv \
+  -F "account_id={account_id}" \
   -F "file=@statement.csv"
 ```
 
 The parser looks for common columns such as `date`, `posted`, `description`, `merchant`, `memo`, `payee`, `amount`, `debit`, `withdrawal`, `credit`, and `deposit`.
+Rows are deduplicated by user, account, date, merchant, amount, and direction so re-importing the same statement will skip already logged purchases.
+
+### Historical statement uploads
+
+```http
+GET /api/statement-uploads
+POST /api/statement-uploads/import-csv
+POST /api/statement-uploads/presign
+```
+
+Use `import-csv` for the current local workflow:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/statement-uploads/import-csv \
+  -F "account_id={account_id}" \
+  -F "month=2026-05" \
+  -F "file=@statement.csv"
+```
+
+Use `presign` after an S3 bucket is configured. It creates a `statement_uploads` record and returns a short-lived upload URL for storing the original file in S3.
 
 ### Purchase decisions
 
@@ -143,13 +170,24 @@ Returns:
 - daily allowance after the proposed purchase
 - a plain-English message grounded in the numbers
 
-### Bank sync placeholder
+### Bank sync
 
 ```http
+GET /api/bank-sync/connections
+POST /api/bank-sync/plaid/link-token
+POST /api/bank-sync/plaid/exchange-public-token
+POST /api/bank-sync/{connection_id}/sync
 POST /api/bank-sync/sync
 ```
 
-This endpoint reserves the contract for future bank integrations. It does not connect to a bank yet. The production version should use a secure aggregator such as Plaid, Teller, Finicity, or MX and exchange public tokens only on the backend.
+The Plaid flow is backend-ready:
+
+1. Configure `LEDGERLY_PLAID_CLIENT_ID`, `LEDGERLY_PLAID_SECRET`, and `LEDGERLY_TOKEN_ENCRYPTION_KEY`.
+2. Request a Link token from `/plaid/link-token`.
+3. Exchange the public token from Plaid Link at `/plaid/exchange-public-token`; the access token is encrypted before storage.
+4. Call `/{connection_id}/sync` to create/update accounts and import transactions with deduplication.
+
+The legacy `/sync` endpoint still exists as a compatibility placeholder.
 
 ### Reports
 
@@ -162,6 +200,6 @@ GET /api/reports/monthly-analysis?month=2026-05
 
 - Tables are auto-created on app startup for speed. Use Alembic migrations before production.
 - There is no real authentication yet.
-- CSV duplicate detection is not implemented yet.
-- Bank sync is only a placeholder endpoint.
-- Uploaded CSV files are parsed in memory and not stored in S3 yet.
+- Bank sync needs real Plaid credentials and production approval before live accounts can be connected.
+- S3 upload URLs require `LEDGERLY_S3_BUCKET` plus AWS credentials or an instance/task role.
+- Uploaded CSV files can be parsed directly today; S3 storage is available through the presign endpoint once configured.

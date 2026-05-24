@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import create_tables
-from .routers import accounts, bank_sync, budgets, decisions, imports, reports, transactions
+from .routers import accounts, bank_sync, budgets, decisions, imports, reports, statement_uploads, transactions
 
 settings = get_settings()
 
@@ -32,6 +32,7 @@ app.include_router(accounts.router, prefix=settings.api_prefix)
 app.include_router(transactions.router, prefix=settings.api_prefix)
 app.include_router(budgets.router, prefix=settings.api_prefix)
 app.include_router(imports.router, prefix=settings.api_prefix)
+app.include_router(statement_uploads.router, prefix=settings.api_prefix)
 app.include_router(decisions.router, prefix=settings.api_prefix)
 app.include_router(bank_sync.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)

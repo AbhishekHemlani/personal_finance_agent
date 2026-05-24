@@ -38,6 +38,8 @@ class Account(Base):
     current_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     source: Mapped[str] = mapped_column(String(32), default="manual")
+    bank_connection_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    external_account_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -90,6 +92,7 @@ class ImportBatch(Base):
     account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     source: Mapped[str] = mapped_column(String(32), default="csv_import")
     file_name: Mapped[str] = mapped_column(String(255))
+    statement_upload_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     rows_total: Mapped[int] = mapped_column(default=0)
     rows_imported: Mapped[int] = mapped_column(default=0)
@@ -107,7 +110,35 @@ class BankConnection(Base):
     provider: Mapped[str] = mapped_column(String(60), default="placeholder")
     institution_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     external_item_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    provider_item_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="not_configured")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    accounts: Mapped[list["Account"]] = relationship(
+        primaryjoin="foreign(Account.bank_connection_id) == BankConnection.id",
+        viewonly=True,
+    )
+
+
+class StatementUpload(Base):
+    __tablename__ = "statement_uploads"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_string)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    account_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    statement_month: Mapped[str] = mapped_column(String(7), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    import_batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    rows_total: Mapped[int] = mapped_column(default=0)
+    rows_imported: Mapped[int] = mapped_column(default=0)
+    rows_skipped: Mapped[int] = mapped_column(default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

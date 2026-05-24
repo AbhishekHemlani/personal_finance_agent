@@ -1,15 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..dependencies import get_user_id
-from ..models import ImportBatch, Transaction
+from ..models import Account
 from ..schemas import CsvImportResponse
-from ..services.budgets import money
-from ..services.categories import categorize_merchant, get_or_create_category
-from ..services.csv_import import parse_csv_transactions
+from ..services.import_pipeline import import_csv_text
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -19,40 +18,21 @@ async def import_csv(
     user_id: Annotated[str, Depends(get_user_id)],
     db: Annotated[Session, Depends(get_db)],
     file: UploadFile = File(...),
+    account_id: str | None = Form(default=None),
 ) -> CsvImportResponse:
+    if account_id:
+        account = db.scalar(select(Account).where(Account.user_id == user_id, Account.id == account_id))
+        if account is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
     text = (await file.read()).decode("utf-8-sig")
-    parsed_rows = parse_csv_transactions(text)
-    batch = ImportBatch(user_id=user_id, file_name=file.filename or "statement.csv", rows_total=len(parsed_rows))
-    db.add(batch)
-    db.flush()
-
-    transactions: list[Transaction] = []
-    rows_skipped = 0
-    for parsed in parsed_rows:
-        if parsed.get("skipped"):
-            rows_skipped += 1
-            continue
-
-        category_name, confidence = categorize_merchant(parsed["merchant"], parsed["direction"])
-        category = get_or_create_category(db, user_id, category_name)
-        transaction = Transaction(
-            user_id=user_id,
-            category_id=category.id,
-            date=parsed["date"],
-            merchant=parsed["merchant"],
-            description=parsed["description"],
-            amount=money(parsed["amount"]),
-            direction=parsed["direction"],
-            source="csv_import",
-            import_batch_id=batch.id,
-            categorization_confidence=confidence,
-        )
-        db.add(transaction)
-        transactions.append(transaction)
-
-    batch.status = "processed"
-    batch.rows_imported = len(transactions)
-    batch.rows_skipped = rows_skipped
+    batch, transactions = import_csv_text(
+        db,
+        user_id=user_id,
+        text=text,
+        file_name=file.filename or "statement.csv",
+        account_id=account_id,
+    )
     db.commit()
 
     for transaction in transactions:

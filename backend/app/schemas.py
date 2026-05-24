@@ -42,6 +42,8 @@ class AccountRead(BaseModel):
     current_balance: Decimal
     currency: str
     source: str
+    bank_connection_id: str | None = None
+    external_account_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -155,6 +157,70 @@ class BankSyncResponse(BaseModel):
     provider: str
     message: str
     next_step: str
+
+
+class BankConnectionRead(BaseModel):
+    id: str
+    provider: str
+    institution_name: str | None
+    external_item_id: str | None
+    provider_item_id: str | None = None
+    status: str
+    last_sync_at: DateTimeType | None
+    created_at: DateTimeType
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PlaidLinkTokenResponse(BaseModel):
+    link_token: str
+    expiration: str | None = None
+
+
+class PlaidExchangeRequest(BaseModel):
+    public_token: str = Field(min_length=1)
+    institution_name: str | None = Field(default=None, max_length=120)
+
+
+class BankSyncResult(BaseModel):
+    connection_id: str
+    status: str
+    accounts_created: int
+    accounts_updated: int
+    transactions_created: int
+    transactions_skipped: int
+    next_cursor_saved: bool
+
+
+class StatementPresignRequest(BaseModel):
+    account_id: str | None = None
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    file_name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(default="text/csv", max_length=120)
+
+
+class StatementPresignResponse(BaseModel):
+    upload_id: str
+    upload_url: str
+    storage_key: str
+
+
+class StatementUploadRead(BaseModel):
+    id: str
+    account_id: str | None
+    statement_month: str
+    file_name: str
+    storage_key: str | None
+    content_type: str | None
+    status: str
+    import_batch_id: str | None
+    rows_total: int
+    rows_imported: int
+    rows_skipped: int
+    error_message: str | None
+    created_at: DateTimeType
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategorySpendRead(BaseModel):
