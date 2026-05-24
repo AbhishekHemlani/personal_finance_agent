@@ -715,8 +715,8 @@ function friendlyError(error) {
 function parseExpenseMessage(text, receipt) {
   const amountMatch = text.match(/(?:\$|for\s+)?(\d+(?:\.\d{1,2})?)/i);
   const amount = amountMatch ? Number(amountMatch[1]) : 0;
-  const category = inferCategory(text);
   const merchant = inferMerchant(text, amountMatch?.[0]);
+  const category = inferCategory(text, merchant);
   const receiptNote = receipt ? `Receipt attached: ${receipt.name}` : "";
 
   return {
@@ -737,13 +737,32 @@ function inferDate(text) {
   return date.toISOString().slice(0, 10);
 }
 
-function inferCategory(text) {
-  const lower = text.toLowerCase();
+function inferCategory(text, merchant = "") {
+  const lower = `${text} ${merchant}`.toLowerCase();
   const rules = [
     ["Coffee", ["coffee", "latte", "espresso", "cafe", "starbucks", "blue bottle", "dunkin"]],
     ["Rent", ["rent", "landlord", "apartment"]],
     ["Groceries", ["grocery", "groceries", "trader joe", "whole foods", "market"]],
-    ["Eating out", ["lunch", "dinner", "restaurant", "doordash", "ubereats", "sweetgreen", "pizza"]],
+    [
+      "Eating out",
+      [
+        "ate",
+        "breakfast",
+        "brunch",
+        "lunch",
+        "dinner",
+        "restaurant",
+        "doordash",
+        "ubereats",
+        "sweetgreen",
+        "chipotle",
+        "pizza",
+        "taco",
+        "burger",
+        "ramen",
+        "sushi",
+      ],
+    ],
     ["Subscriptions", ["subscription", "netflix", "spotify", "hulu"]],
     ["Transport", ["uber", "lyft", "gas", "metro", "train", "bus"]],
     ["Utilities", ["electric", "internet", "utility", "water", "phone"]],
@@ -754,16 +773,15 @@ function inferCategory(text) {
 }
 
 function inferMerchant(text, amountText) {
+  const knownMerchant = findKnownMerchant(text);
+  if (knownMerchant) return knownMerchant;
+
   const merchantMatch = text.match(/\b(?:at|from)\s+(.+?)(?:\s+(?:for|on)\s+|\s+\$?\d|$)/i);
   if (merchantMatch?.[1]) {
-    return titleCase(merchantMatch[1].trim());
+    return titleCase(cleanMerchantText(merchantMatch[1]));
   }
 
-  let clean = text
-    .replace(amountText || "", "")
-    .replace(/\b(spent|paid|bought|buy|for|on|at|from|yesterday|today)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  let clean = cleanMerchantText(text.replace(amountText || "", ""));
 
   clean = clean.split(/\b(coffee|latte|espresso|lunch|dinner|groceries|rent|subscription|gas)\b/i)[0].trim() || clean;
   if (!clean) return "Manual expense";
@@ -773,6 +791,35 @@ function inferMerchant(text, amountText) {
     .slice(0, 5)
     .map(titleCase)
     .join(" ");
+}
+
+function findKnownMerchant(text) {
+  const lower = text.toLowerCase();
+  const merchants = [
+    ["Chipotle", ["chipotle"]],
+    ["Sweetgreen", ["sweetgreen"]],
+    ["Starbucks", ["starbucks"]],
+    ["Blue Bottle", ["blue bottle"]],
+    ["Dunkin", ["dunkin"]],
+    ["Trader Joe's", ["trader joe"]],
+    ["Whole Foods", ["whole foods"]],
+    ["Amazon", ["amazon"]],
+    ["Target", ["target"]],
+    ["Uber", ["uber"]],
+    ["Lyft", ["lyft"]],
+    ["Netflix", ["netflix"]],
+    ["Spotify", ["spotify"]],
+  ];
+
+  return merchants.find(([, aliases]) => aliases.some((alias) => lower.includes(alias)))?.[0] || "";
+}
+
+function cleanMerchantText(value) {
+  return value
+    .replace(/\b(i|we)\s+(ate|got|had|bought|paid|spent|ordered|grabbed|picked up)\b/gi, " ")
+    .replace(/\b(spent|paid|bought|buy|ordered|grabbed|got|had|ate|for|on|at|from|yesterday|today)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function titleCase(value) {

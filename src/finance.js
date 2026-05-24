@@ -34,7 +34,7 @@ const categoryRules = [
   ["Coffee", ["coffee", "starbucks", "blue bottle", "cafe", "espresso", "dunkin"]],
   ["Rent", ["rent", "landlord", "apartment", "property"]],
   ["Groceries", ["grocery", "trader joe", "whole foods", "safeway", "kroger", "market"]],
-  ["Eating out", ["restaurant", "doordash", "ubereats", "grubhub", "pizza", "taco", "bar"]],
+  ["Eating out", ["restaurant", "doordash", "ubereats", "grubhub", "chipotle", "sweetgreen", "pizza", "taco", "burger", "ramen", "sushi", "bar"]],
   ["Subscriptions", ["netflix", "spotify", "hulu", "apple.com", "subscription", "patreon"]],
   ["Transport", ["uber", "lyft", "metro", "mta", "shell", "chevron", "gas"]],
   ["Utilities", ["electric", "utility", "water", "internet", "verizon", "comcast"]],
