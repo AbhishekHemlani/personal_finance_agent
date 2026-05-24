@@ -129,6 +129,16 @@ class CsvImportResponse(BaseModel):
     transactions: list[TransactionRead]
 
 
+class ReceiptParseResponse(BaseModel):
+    date: DateType
+    merchant: str
+    category: str
+    amount: Decimal
+    note: str
+    confidence: Decimal
+    source: str
+
+
 class PurchaseDecisionRequest(BaseModel):
     category_name: str = Field(min_length=1, max_length=80)
     amount: Decimal = Field(gt=0)

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     plaid_country_codes: list[str] = ["US"]
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
+    openai_api_key: str | None = None
+    openai_receipt_model: str = "gpt-4.1-mini"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="LEDGERLY_")
 

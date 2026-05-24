@@ -242,7 +242,13 @@ export default function App() {
         <Metrics summary={summary} />
 
         <section className="workspace-grid">
-          <TransactionForm accounts={accounts} accountId={logAccountId} onAccountChange={setLogAccountId} onSubmit={addTransaction} />
+          <TransactionForm
+            accounts={accounts}
+            accountId={logAccountId}
+            onAccountChange={setLogAccountId}
+            onParseReceipt={api.parseReceipt}
+            onSubmit={addTransaction}
+          />
           <PurchaseAssistant
             question={purchaseQuestion}
             result={purchaseResult}
@@ -346,7 +352,7 @@ function Metric({ title, value, caption, alert = false }) {
   );
 }
 
-function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
+function TransactionForm({ accounts, accountId, onAccountChange, onParseReceipt, onSubmit }) {
   const [message, setMessage] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [chatMessages, setChatMessages] = useState([
@@ -363,37 +369,44 @@ function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
     const form = event.currentTarget;
     const text = message.trim();
 
-    if (!text && receipt) {
-      setChatMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          text: `Uploaded receipt: ${receipt.name}`,
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          text: "Receipt upload is ready, but OCR is not wired yet. Add a short note like \"coffee at Blue Bottle for 6.50\" and I will log it.",
-        },
-      ]);
-      return;
-    }
+    if (!text && !receipt) return;
 
-    if (!text) return;
-
-    const parsed = parseExpenseMessage(text, receipt);
-    parsed.accountId = accountId;
     setChatMessages((current) => [
       ...current,
       {
         id: crypto.randomUUID(),
         role: "user",
-        text: receipt ? `${text} [receipt: ${receipt.name}]` : text,
+        text: receipt ? `${text || "Uploaded receipt"} [receipt: ${receipt.name}]` : text,
       },
     ]);
 
-    if (!parsed.amount) {
+    setIsSubmitting(true);
+    let parsed = text ? parseExpenseMessage(text, receipt) : null;
+    if (receipt && (!parsed || !parsed.amount)) {
+      try {
+        const receiptResult = await onParseReceipt(receipt, text);
+        parsed = {
+          date: receiptResult.date,
+          merchant: receiptResult.merchant,
+          category: receiptResult.category,
+          amount: Number(receiptResult.amount),
+          note: [text, receiptResult.note, `Receipt attached: ${receipt.name}`].filter(Boolean).join(" | "),
+        };
+      } catch (error) {
+        setChatMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: `I could not read that receipt yet: ${friendlyError(error)}`,
+          },
+        ]);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    if (!parsed?.amount) {
       setChatMessages((current) => [
         ...current,
         {
@@ -402,10 +415,11 @@ function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
           text: "I need an amount before I can log that. Try something like \"lunch at Sweetgreen for 14.20\".",
         },
       ]);
+      setIsSubmitting(false);
       return;
     }
 
-    setIsSubmitting(true);
+    parsed.accountId = accountId;
     try {
       await onSubmit(parsed);
       setChatMessages((current) => [
@@ -886,7 +900,12 @@ function friendlyError(error) {
   if (error instanceof TypeError && /fetch|network|failed/i.test(error.message)) {
     return "start FastAPI on http://127.0.0.1:8000, then refresh.";
   }
-  return error.message;
+  try {
+    const parsed = JSON.parse(error.message);
+    return parsed.detail || error.message;
+  } catch {
+    return error.message;
+  }
 }
 
 function parseExpenseMessage(text, receipt) {

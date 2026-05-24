@@ -170,6 +170,22 @@ Returns:
 - daily allowance after the proposed purchase
 - a plain-English message grounded in the numbers
 
+### Receipt parsing
+
+```http
+POST /api/receipts/parse
+```
+
+Text receipts are parsed locally with deterministic rules. Image receipts use the OpenAI Responses API with a vision-capable model when `LEDGERLY_OPENAI_API_KEY` is configured.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/receipts/parse \
+  -F "note=lunch" \
+  -F "file=@receipt.jpg"
+```
+
+The endpoint returns a transaction candidate with `date`, `merchant`, `category`, `amount`, `note`, `confidence`, and `source`.
+
 ### Bank sync
 
 ```http
@@ -203,3 +219,4 @@ GET /api/reports/monthly-analysis?month=2026-05
 - Bank sync needs real Plaid credentials and production approval before live accounts can be connected.
 - S3 upload URLs require `LEDGERLY_S3_BUCKET` plus AWS credentials or an instance/task role.
 - Uploaded CSV files can be parsed directly today; S3 storage is available through the presign endpoint once configured.
+- Image receipt parsing needs `LEDGERLY_OPENAI_API_KEY`; text receipt parsing works without an LLM call.

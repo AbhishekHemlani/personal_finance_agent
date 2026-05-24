@@ -61,6 +61,16 @@ export const api = {
     });
   },
 
+  parseReceipt(file, note = "") {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("note", note);
+    return request("/receipts/parse", {
+      method: "POST",
+      body,
+    });
+  },
+
   purchaseDecision(payload) {
     return request("/decisions/purchase", {
       method: "POST",
