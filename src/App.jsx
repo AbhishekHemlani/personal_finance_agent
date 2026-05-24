@@ -360,6 +360,7 @@ function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
 
   async function submitExpense(event) {
     event.preventDefault();
+    const form = event.currentTarget;
     const text = message.trim();
 
     if (!text && receipt) {
@@ -417,7 +418,7 @@ function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
       ]);
       setMessage("");
       setReceipt(null);
-      event.currentTarget.reset();
+      form.reset();
     } catch (error) {
       setChatMessages((current) => [
         ...current,
@@ -882,7 +883,7 @@ function loadLocalState() {
 }
 
 function friendlyError(error) {
-  if (error instanceof TypeError) {
+  if (error instanceof TypeError && /fetch|network|failed/i.test(error.message)) {
     return "start FastAPI on http://127.0.0.1:8000, then refresh.";
   }
   return error.message;
