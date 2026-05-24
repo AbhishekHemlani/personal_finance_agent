@@ -18,8 +18,8 @@ export default function App() {
   const [monthlyAnalysis, setMonthlyAnalysis] = useState(null);
   const [localState, setLocalState] = useState(loadLocalState);
   const [search, setSearch] = useState("");
-  const [coffeePrice, setCoffeePrice] = useState("6.50");
-  const [coffeeResult, setCoffeeResult] = useState("Set a price to see whether it fits your monthly coffee budget.");
+  const [purchaseQuestion, setPurchaseQuestion] = useState("Can I buy dinner for 45?");
+  const [purchaseResult, setPurchaseResult] = useState("Ask about any flexible expense and I will check it against your budgets.");
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState("Connecting to backend...");
   const activeMonth = today().slice(0, 7);
@@ -56,7 +56,10 @@ export default function App() {
   }, [localState]);
 
   const summary = useMemo(() => {
-    const coffee = budgetSummary?.categories.find((category) => category.category_name === "Coffee");
+    const flexibleCategories = ["Coffee", "Eating out", "Entertainment", "Shopping", "Other"];
+    const flexibleLeft = budgetSummary?.categories
+      .filter((category) => flexibleCategories.includes(category.category_name))
+      .reduce((sum, category) => sum + Number(category.remaining || 0), 0);
     return {
       netWorth:
         Number(localState.netWorth.cash || 0) +
@@ -65,7 +68,7 @@ export default function App() {
         Number(localState.netWorth.debts || 0),
       monthSpend: Number(budgetSummary?.total_spent || 0),
       budgetLeft: Number(budgetSummary?.total_remaining || 0),
-      coffeeLeft: Number(coffee?.remaining || 0),
+      flexibleLeft: Number(flexibleLeft || 0),
     };
   }, [budgetSummary, localState.netWorth]);
 
@@ -149,13 +152,19 @@ export default function App() {
     await loadBackendState();
   }
 
-  async function checkCoffee() {
+  async function checkPurchase() {
+    const parsed = parsePurchaseQuestion(purchaseQuestion);
+    if (!parsed.amount) {
+      setPurchaseResult("Add an amount so I can check the budget impact. Example: \"Can I buy concert tickets for 120?\"");
+      return;
+    }
+
     const decision = await api.purchaseDecision({
-      category_name: "Coffee",
-      amount: Number(coffeePrice || 0),
+      category_name: parsed.category,
+      amount: parsed.amount,
       date: today(),
     });
-    setCoffeeResult(decision.message);
+    setPurchaseResult(`${parsed.label}: ${decision.message}`);
     await loadBackendState();
   }
 
@@ -205,7 +214,7 @@ export default function App() {
         }),
       ),
     );
-    setCoffeeResult("Set a price to see whether it fits your monthly coffee budget.");
+    setPurchaseResult("Ask about any flexible expense and I will check it against your budgets.");
     await loadBackendState();
   }
 
@@ -234,7 +243,12 @@ export default function App() {
 
         <section className="workspace-grid">
           <TransactionForm accounts={accounts} accountId={logAccountId} onAccountChange={setLogAccountId} onSubmit={addTransaction} />
-          <CoffeeCoach price={coffeePrice} result={coffeeResult} onPriceChange={setCoffeePrice} onCheck={checkCoffee} />
+          <PurchaseAssistant
+            question={purchaseQuestion}
+            result={purchaseResult}
+            onQuestionChange={setPurchaseQuestion}
+            onCheck={checkPurchase}
+          />
         </section>
 
         <section className="workspace-grid">
@@ -313,9 +327,9 @@ function Metrics({ summary }) {
         caption={summary.budgetLeft >= 0 ? "Remaining monthly allowance" : "Over planned monthly spend"}
       />
       <Metric
-        title="Coffee allowance"
-        value={summary.coffeeLeft}
-        caption={summary.coffeeLeft >= 0 ? "For the rest of this month" : "Coffee budget is over"}
+        title="Flexible left"
+        value={summary.flexibleLeft}
+        caption={summary.flexibleLeft >= 0 ? "Coffee, dining, fun, shopping" : "Flexible budgets are over"}
         alert
       />
     </section>
@@ -475,23 +489,28 @@ function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
   );
 }
 
-function CoffeeCoach({ price, result, onPriceChange, onCheck }) {
+function PurchaseAssistant({ question, result, onQuestionChange, onCheck }) {
   return (
-    <article className="panel" id="coffeeCoach">
+    <article className="panel" id="purchaseAssistant">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Coffee coach</p>
-          <h2>Can I buy coffee?</h2>
+          <p className="eyebrow">Purchase assistant</p>
+          <h2>Can I buy...</h2>
         </div>
       </div>
       <div className="coach-layout">
         <div>
           <label>
-            Coffee price
-            <input type="number" step="0.01" min="0" value={price} onChange={(event) => onPriceChange(event.target.value)} />
+            Ask about a purchase
+            <textarea
+              value={question}
+              onChange={(event) => onQuestionChange(event.target.value)}
+              placeholder="Can I buy dinner for 45?"
+              rows="3"
+            />
           </label>
           <button type="button" onClick={onCheck}>
-            Check allowance
+            Check budget
           </button>
         </div>
         <div className="coach-result">{result}</div>
@@ -885,6 +904,27 @@ function parseExpenseMessage(text, receipt) {
   };
 }
 
+function parsePurchaseQuestion(text) {
+  const amountMatch = text.match(/(?:\$|for\s+)?(\d+(?:\.\d{1,2})?)/i);
+  const amount = amountMatch ? Number(amountMatch[1]) : 0;
+  const category = inferCategory(text);
+  const label = inferPurchaseLabel(text, amountMatch?.[0]);
+
+  return {
+    amount,
+    category,
+    label,
+  };
+}
+
+function inferPurchaseLabel(text, amountText) {
+  const clean = cleanMerchantText(text.replace(amountText || "", ""))
+    .replace(/\b(can|could|should|i|we|buy|purchase|get|spend)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean ? titleCase(clean) : "Purchase";
+}
+
 function inferDate(text) {
   const lower = text.toLowerCase();
   const date = new Date();
@@ -906,6 +946,7 @@ function inferCategory(text, merchant = "") {
         "ate",
         "breakfast",
         "brunch",
+        "food",
         "lunch",
         "dinner",
         "restaurant",
@@ -920,6 +961,7 @@ function inferCategory(text, merchant = "") {
         "sushi",
       ],
     ],
+    ["Entertainment", ["concert", "movie", "movies", "ticket", "tickets", "game", "bowling", "activity", "activities", "fun"]],
     ["Subscriptions", ["subscription", "netflix", "spotify", "hulu"]],
     ["Transport", ["uber", "lyft", "gas", "metro", "train", "bus"]],
     ["Utilities", ["electric", "internet", "utility", "water", "phone"]],
