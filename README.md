@@ -42,6 +42,8 @@ The backend is required for transaction, budget, CSV, and purchase-decision work
 
 The backend architecture, app workflow, data model, and implementation roadmap are documented in [`docs/backend-workflow.md`](docs/backend-workflow.md).
 
+The assistant-first product direction is documented in [`docs/finance-assistant-product-spec.md`](docs/finance-assistant-product-spec.md).
+
 The first FastAPI/Postgres backend is in [`backend/`](backend/). It includes API endpoints for transactions, budgets, CSV imports, purchase decisions, and a reserved bank-sync endpoint.
 
 Run Postgres:
