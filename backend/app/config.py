@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_receipt_model: str = "gpt-4.1-mini"
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="LEDGERLY_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="LEDGERLY_", extra="ignore")
 
 
 @lru_cache
