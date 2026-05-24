@@ -8,6 +8,9 @@ A React/Vite personal finance prototype for tracking spending, category budgets,
 - Attach receipts to the daily tracker flow while full OCR is still pending.
 - Upload CSV statements and auto-categorize common purchases.
 - Track monthly category budgets, including a coffee-specific allowance check.
+- Add accounts/cards and attach transactions to the card or bank account used.
+- Filter the ledger by account/card.
+- Download a monthly CSV export and view monthly analysis.
 - Schedule future payments such as rent, subscriptions, utilities, and card payments.
 - Maintain a simple assets-versus-debts net worth snapshot.
 - Store transactions, budgets, CSV imports, and purchase decisions through FastAPI/Postgres.
@@ -44,7 +47,7 @@ The backend architecture, app workflow, data model, and implementation roadmap a
 
 The assistant-first product direction is documented in [`docs/finance-assistant-product-spec.md`](docs/finance-assistant-product-spec.md).
 
-The first FastAPI/Postgres backend is in [`backend/`](backend/). It includes API endpoints for transactions, budgets, CSV imports, purchase decisions, and a reserved bank-sync endpoint.
+The first FastAPI/Postgres backend is in [`backend/`](backend/). It includes API endpoints for accounts/cards, transactions, budgets, CSV imports, monthly reports, purchase decisions, and a reserved bank-sync endpoint.
 
 Run Postgres:
 

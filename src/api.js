@@ -21,8 +21,9 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  listTransactions() {
-    return request("/transactions");
+  listTransactions(accountId = "") {
+    const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : "";
+    return request(`/transactions${query}`);
   },
 
   createTransaction(transaction) {
@@ -65,5 +66,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+
+  listAccounts() {
+    return request("/accounts");
+  },
+
+  createAccount(account) {
+    return request("/accounts", {
+      method: "POST",
+      body: JSON.stringify(account),
+    });
+  },
+
+  monthlyAnalysis(month) {
+    return request(`/reports/monthly-analysis?month=${encodeURIComponent(month)}`);
+  },
+
+  monthlyCsvUrl(month) {
+    return `${apiBaseUrl}/reports/monthly.csv?month=${encodeURIComponent(month)}`;
   },
 };

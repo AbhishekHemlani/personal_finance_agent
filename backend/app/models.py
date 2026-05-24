@@ -26,12 +26,30 @@ class Category(Base):
     budgets: Mapped[list["Budget"]] = relationship(back_populates="category")
 
 
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_string)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    institution_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    type: Mapped[str] = mapped_column(String(40), default="credit_card")
+    mask: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    current_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="account")
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_string)
     user_id: Mapped[str] = mapped_column(String(128), index=True)
-    account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     date: Mapped[date] = mapped_column(Date, index=True)
     merchant: Mapped[str] = mapped_column(String(180))
@@ -46,6 +64,7 @@ class Transaction(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     category: Mapped[Category | None] = relationship(back_populates="transactions")
+    account: Mapped[Account | None] = relationship(back_populates="transactions")
 
 
 class Budget(Base):

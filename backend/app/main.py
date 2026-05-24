@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import create_tables
-from .routers import bank_sync, budgets, decisions, imports, transactions
+from .routers import accounts, bank_sync, budgets, decisions, imports, reports, transactions
 
 settings = get_settings()
 
@@ -28,8 +28,10 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+app.include_router(accounts.router, prefix=settings.api_prefix)
 app.include_router(transactions.router, prefix=settings.api_prefix)
 app.include_router(budgets.router, prefix=settings.api_prefix)
 app.include_router(imports.router, prefix=settings.api_prefix)
 app.include_router(decisions.router, prefix=settings.api_prefix)
 app.include_router(bank_sync.router, prefix=settings.api_prefix)
+app.include_router(reports.router, prefix=settings.api_prefix)

@@ -12,6 +12,10 @@ const initialLocalState = {
 export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [budgetSummary, setBudgetSummary] = useState(null);
+  const [accounts, setAccounts] = useState([]);
+  const [accountFilter, setAccountFilter] = useState("");
+  const [logAccountId, setLogAccountId] = useState("");
+  const [monthlyAnalysis, setMonthlyAnalysis] = useState(null);
   const [localState, setLocalState] = useState(loadLocalState);
   const [search, setSearch] = useState("");
   const [coffeePrice, setCoffeePrice] = useState("6.50");
@@ -24,18 +28,24 @@ export default function App() {
     setIsLoading(true);
     try {
       const [transactionRows, summary] = await Promise.all([
-        api.listTransactions(),
+        api.listTransactions(accountFilter),
         api.budgetSummary(activeMonth),
+      ]);
+      const [accountRows, analysis] = await Promise.all([
+        api.listAccounts(),
+        api.monthlyAnalysis(activeMonth),
       ]);
       setTransactions(transactionRows.map(fromApiTransaction));
       setBudgetSummary(summary);
+      setAccounts(accountRows);
+      setMonthlyAnalysis(analysis);
       setStatus("Backend connected. Data is saved in Postgres.");
     } catch (error) {
       setStatus(`Backend unavailable: ${friendlyError(error)}`);
     } finally {
       setIsLoading(false);
     }
-  }, [activeMonth]);
+  }, [accountFilter, activeMonth]);
 
   useEffect(() => {
     loadBackendState();
@@ -66,6 +76,7 @@ export default function App() {
       category_name: expense.category,
       amount: Number(expense.amount),
       description: expense.note,
+      account_id: expense.accountId || null,
       direction: expense.category === "Income" ? "income" : "expense",
     });
     await loadBackendState();
@@ -123,6 +134,18 @@ export default function App() {
   async function importCsv(file) {
     if (!file) return;
     await api.importCsv(file);
+    await loadBackendState();
+  }
+
+  async function addAccount(formData) {
+    const account = await api.createAccount({
+      name: formData.get("name").trim(),
+      institution_name: formData.get("institution_name").trim() || null,
+      type: formData.get("type"),
+      mask: formData.get("mask").trim() || null,
+      current_balance: Number(formData.get("current_balance") || 0),
+    });
+    setLogAccountId(account.id);
     await loadBackendState();
   }
 
@@ -210,18 +233,32 @@ export default function App() {
         <Metrics summary={summary} />
 
         <section className="workspace-grid">
-          <TransactionForm onSubmit={addTransaction} />
+          <TransactionForm accounts={accounts} accountId={logAccountId} onAccountChange={setLogAccountId} onSubmit={addTransaction} />
           <CoffeeCoach price={coffeePrice} result={coffeeResult} onPriceChange={setCoffeePrice} onCheck={checkCoffee} />
         </section>
 
         <section className="workspace-grid">
           <BudgetPanel summary={budgetSummary} onUpdateBudget={updateBudget} onReset={resetBudgets} />
-          <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
+          <AccountPanel accounts={accounts} onSubmit={addAccount} />
         </section>
+
+        <ReportsPanel analysis={monthlyAnalysis} month={activeMonth} />
 
         <PaymentPlanner payments={localState.payments} onSubmit={addPayment} onRemove={removePayment} />
 
-        <TransactionTable transactions={transactions} search={search} onSearch={setSearch} onRemove={removeTransaction} />
+        <TransactionTable
+          accounts={accounts}
+          accountFilter={accountFilter}
+          onAccountFilter={setAccountFilter}
+          logAccountId={logAccountId}
+          onLogAccountChange={setLogAccountId}
+          transactions={transactions}
+          search={search}
+          onSearch={setSearch}
+          onRemove={removeTransaction}
+        />
+
+        <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
       </main>
     </div>
   );
@@ -295,7 +332,7 @@ function Metric({ title, value, caption, alert = false }) {
   );
 }
 
-function TransactionForm({ onSubmit }) {
+function TransactionForm({ accounts, accountId, onAccountChange, onSubmit }) {
   const [message, setMessage] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [chatMessages, setChatMessages] = useState([
@@ -331,6 +368,7 @@ function TransactionForm({ onSubmit }) {
     if (!text) return;
 
     const parsed = parseExpenseMessage(text, receipt);
+    parsed.accountId = accountId;
     setChatMessages((current) => [
       ...current,
       {
@@ -400,6 +438,17 @@ function TransactionForm({ onSubmit }) {
           ))}
         </div>
         <div className="receipt-row">
+          <label>
+            Account
+            <select value={accountId} onChange={(event) => onAccountChange(event.target.value)}>
+              <option value="">Unassigned</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="receipt-button">
             Upload receipt
             <input
@@ -535,6 +584,83 @@ function NetWorthPanel({ netWorth, onSubmit }) {
   );
 }
 
+function AccountPanel({ accounts, onSubmit }) {
+  return (
+    <article className="panel" id="accounts">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Accounts and cards</p>
+          <h2>Linked ledgers</h2>
+        </div>
+      </div>
+      <form
+        className="account-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(new FormData(event.currentTarget));
+          event.currentTarget.reset();
+        }}
+      >
+        <input name="name" placeholder="Chase Sapphire" required />
+        <input name="institution_name" placeholder="Institution" />
+        <select name="type" defaultValue="credit_card">
+          <option value="credit_card">Credit card</option>
+          <option value="checking">Checking</option>
+          <option value="savings">Savings</option>
+          <option value="debit_card">Debit card</option>
+          <option value="cash">Cash</option>
+        </select>
+        <input name="mask" placeholder="Last 4" maxLength="4" />
+        <input name="current_balance" type="number" step="0.01" placeholder="Balance" />
+        <button type="submit">Add account</button>
+      </form>
+      <div className="account-list">
+        {accounts.length ? (
+          accounts.map((account) => (
+            <div className="account-row" key={account.id}>
+              <strong>{account.name}</strong>
+              <span>{[account.institution_name, account.mask ? `*${account.mask}` : "", account.type.replace("_", " ")].filter(Boolean).join(" - ")}</span>
+            </div>
+          ))
+        ) : (
+          <div className="empty-state">Add a card or bank account to separate your ledgers.</div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ReportsPanel({ analysis, month }) {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Monthly report</p>
+          <h2>Analysis and export</h2>
+        </div>
+        <a className="download-link" href={api.monthlyCsvUrl(month)} download>
+          Download CSV
+        </a>
+      </div>
+      <div className="report-grid">
+        <div>
+          <span>Total spent</span>
+          <strong>{money(Number(analysis?.total_spent || 0))}</strong>
+        </div>
+        <div>
+          <span>Net cash flow</span>
+          <strong>{money(Number(analysis?.net_cash_flow || 0))}</strong>
+        </div>
+        <div>
+          <span>Transactions</span>
+          <strong>{analysis?.transaction_count || 0}</strong>
+        </div>
+      </div>
+      <p className="report-summary">{analysis?.summary || "Add transactions to generate monthly analysis."}</p>
+    </section>
+  );
+}
+
 function PaymentPlanner({ payments, onSubmit, onRemove }) {
   const sortedPayments = [...payments].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -612,7 +738,17 @@ function PaymentPlanner({ payments, onSubmit, onRemove }) {
   );
 }
 
-function TransactionTable({ transactions, search, onSearch, onRemove }) {
+function TransactionTable({
+  accounts,
+  accountFilter,
+  onAccountFilter,
+  logAccountId,
+  onLogAccountChange,
+  transactions,
+  search,
+  onSearch,
+  onRemove,
+}) {
   const visibleTransactions = transactions
     .filter((transaction) => {
       const haystack = `${transaction.merchant} ${transaction.category} ${transaction.note}`.toLowerCase();
@@ -627,7 +763,25 @@ function TransactionTable({ transactions, search, onSearch, onRemove }) {
           <p className="eyebrow">Ledger</p>
           <h2>Recent transactions</h2>
         </div>
-        <input type="search" placeholder="Search merchant or category" value={search} onChange={(event) => onSearch(event.target.value)} />
+        <div className="ledger-controls">
+          <select value={accountFilter} onChange={(event) => onAccountFilter(event.target.value)} aria-label="Filter by account">
+            <option value="">All accounts</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+          <select value={logAccountId} onChange={(event) => onLogAccountChange(event.target.value)} aria-label="Default logging account">
+            <option value="">Log to unassigned</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                Log to {account.name}
+              </option>
+            ))}
+          </select>
+          <input type="search" placeholder="Search merchant or category" value={search} onChange={(event) => onSearch(event.target.value)} />
+        </div>
       </div>
       <div className="table-wrap">
         <table>
@@ -636,6 +790,7 @@ function TransactionTable({ transactions, search, onSearch, onRemove }) {
               <th>Date</th>
               <th>Merchant</th>
               <th>Category</th>
+              <th>Account</th>
               <th>Amount</th>
               <th></th>
             </tr>
@@ -649,6 +804,7 @@ function TransactionTable({ transactions, search, onSearch, onRemove }) {
                   <td>
                     <span className="category-pill">{transaction.category}</span>
                   </td>
+                  <td>{transaction.accountName}</td>
                   <td>{money(transaction.amount)}</td>
                   <td>
                     <button
@@ -664,7 +820,7 @@ function TransactionTable({ transactions, search, onSearch, onRemove }) {
               ))
             ) : (
               <tr>
-                <td colSpan="5" className="empty-state">
+                <td colSpan="6" className="empty-state">
                   No transactions yet. Add one manually or upload a CSV statement.
                 </td>
               </tr>
@@ -695,6 +851,7 @@ function fromApiTransaction(transaction) {
     date: transaction.date,
     merchant: transaction.merchant,
     category: transaction.category?.name || "Other",
+    accountName: transaction.account?.name || "Unassigned",
     amount: Number(transaction.amount),
     note: transaction.description || "",
   };

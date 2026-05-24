@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..dependencies import get_user_id
-from ..models import Transaction
+from ..models import Account, Transaction
 from ..schemas import TransactionCreate, TransactionRead, TransactionUpdate
 from ..services.categories import categorize_merchant, ensure_default_categories, get_or_create_category
 from ..services.budgets import money
@@ -20,16 +20,19 @@ def list_transactions(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=250)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    account_id: str | None = None,
 ) -> list[Transaction]:
     ensure_default_categories(db, user_id)
+    statement = (
+        select(Transaction)
+        .options(joinedload(Transaction.category), joinedload(Transaction.account))
+        .where(Transaction.user_id == user_id)
+    )
+    if account_id:
+        statement = statement.where(Transaction.account_id == account_id)
     return list(
         db.scalars(
-            select(Transaction)
-            .options(joinedload(Transaction.category))
-            .where(Transaction.user_id == user_id)
-            .order_by(Transaction.date.desc(), Transaction.created_at.desc())
-            .limit(limit)
-            .offset(offset),
+            statement.order_by(Transaction.date.desc(), Transaction.created_at.desc()).limit(limit).offset(offset),
         ),
     )
 
@@ -46,6 +49,8 @@ def create_transaction(
         else categorize_merchant(payload.merchant, payload.direction)
     )
     category = get_or_create_category(db, user_id, str(category_name))
+    if payload.account_id:
+        ensure_account_exists(db, user_id, payload.account_id)
     transaction = Transaction(
         user_id=user_id,
         account_id=payload.account_id,
@@ -78,6 +83,9 @@ def update_transaction(
         category = get_or_create_category(db, user_id, updates.pop("category_name"))
         transaction.category_id = category.id
 
+    if "account_id" in updates and updates["account_id"]:
+        ensure_account_exists(db, user_id, updates["account_id"])
+
     if "amount" in updates and updates["amount"] is not None:
         updates["amount"] = money(updates["amount"])
 
@@ -104,9 +112,15 @@ def delete_transaction(
 def get_transaction_or_404(db: Session, user_id: str, transaction_id: str) -> Transaction:
     transaction = db.scalar(
         select(Transaction)
-        .options(joinedload(Transaction.category))
+        .options(joinedload(Transaction.category), joinedload(Transaction.account))
         .where(Transaction.user_id == user_id, Transaction.id == transaction_id),
     )
     if transaction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     return transaction
+
+
+def ensure_account_exists(db: Session, user_id: str, account_id: str) -> None:
+    account = db.scalar(select(Account).where(Account.user_id == user_id, Account.id == account_id))
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account does not belong to this user")

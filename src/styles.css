@@ -362,7 +362,7 @@ button:disabled {
 }
 
 .receipt-row {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(180px, 0.7fr) auto minmax(0, 1fr);
   color: var(--muted);
   font-weight: 800;
 }
@@ -450,6 +450,85 @@ button:disabled {
 
 .budget-row input {
   min-height: 36px;
+}
+
+.account-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.account-form button {
+  grid-column: span 2;
+}
+
+.account-list {
+  display: grid;
+  gap: 10px;
+}
+
+.account-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.account-row span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.download-link {
+  min-height: 42px;
+  border-radius: 6px;
+  background: var(--teal);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  text-decoration: none;
+  font-weight: 850;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fffefa;
+  display: grid;
+  gap: 6px;
+}
+
+.report-grid span,
+.report-summary {
+  color: var(--muted);
+}
+
+.report-grid strong {
+  font-size: 1.4rem;
+}
+
+.report-summary {
+  margin: 14px 0 0;
+  font-weight: 800;
+}
+
+.ledger-controls {
+  display: grid;
+  grid-template-columns: 170px 190px minmax(220px, 1fr);
+  gap: 10px;
+  align-items: center;
 }
 
 .table-wrap {
@@ -568,7 +647,10 @@ th:last-child {
   }
 
   .chat-input-row,
-  .receipt-row {
+  .receipt-row,
+  .account-form,
+  .report-grid,
+  .ledger-controls {
     grid-template-columns: 1fr;
   }
 

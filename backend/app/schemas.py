@@ -15,6 +15,37 @@ class CategoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AccountCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    institution_name: str | None = Field(default=None, max_length=120)
+    type: str = "credit_card"
+    mask: str | None = Field(default=None, max_length=12)
+    current_balance: Decimal = Decimal("0.00")
+    currency: str = Field(default="USD", max_length=3)
+
+
+class AccountUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    institution_name: str | None = Field(default=None, max_length=120)
+    type: str | None = None
+    mask: str | None = Field(default=None, max_length=12)
+    current_balance: Decimal | None = None
+    currency: str | None = Field(default=None, max_length=3)
+
+
+class AccountRead(BaseModel):
+    id: str
+    name: str
+    institution_name: str | None
+    type: str
+    mask: str | None
+    current_balance: Decimal
+    currency: str
+    source: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TransactionCreate(BaseModel):
     date: DateType
     merchant: str = Field(min_length=1, max_length=180)
@@ -32,6 +63,7 @@ class TransactionUpdate(BaseModel):
     category_name: str | None = None
     description: str | None = None
     direction: str | None = None
+    account_id: str | None = None
 
 
 class TransactionRead(BaseModel):
@@ -43,6 +75,7 @@ class TransactionRead(BaseModel):
     direction: str
     source: str
     category: CategoryRead | None
+    account: AccountRead | None
     categorization_confidence: Decimal
     created_at: DateTimeType
 
@@ -122,3 +155,31 @@ class BankSyncResponse(BaseModel):
     provider: str
     message: str
     next_step: str
+
+
+class CategorySpendRead(BaseModel):
+    category_name: str
+    total: Decimal
+
+
+class AccountSpendRead(BaseModel):
+    account_id: str | None
+    account_name: str
+    total: Decimal
+
+
+class MerchantSpendRead(BaseModel):
+    merchant: str
+    total: Decimal
+
+
+class MonthlyAnalysisResponse(BaseModel):
+    month: str
+    total_spent: Decimal
+    total_income: Decimal
+    net_cash_flow: Decimal
+    transaction_count: int
+    by_category: list[CategorySpendRead]
+    by_account: list[AccountSpendRead]
+    top_merchants: list[MerchantSpendRead]
+    summary: str

@@ -54,9 +54,19 @@ http://127.0.0.1:8000/api
 
 ```http
 GET /api/transactions
+GET /api/transactions?account_id={account_id}
 POST /api/transactions
 PATCH /api/transactions/{transaction_id}
 DELETE /api/transactions/{transaction_id}
+```
+
+### Accounts and cards
+
+```http
+GET /api/accounts
+POST /api/accounts
+PATCH /api/accounts/{account_id}
+DELETE /api/accounts/{account_id}
 ```
 
 Create example:
@@ -140,6 +150,13 @@ POST /api/bank-sync/sync
 ```
 
 This endpoint reserves the contract for future bank integrations. It does not connect to a bank yet. The production version should use a secure aggregator such as Plaid, Teller, Finicity, or MX and exchange public tokens only on the backend.
+
+### Reports
+
+```http
+GET /api/reports/monthly.csv?month=2026-05
+GET /api/reports/monthly-analysis?month=2026-05
+```
 
 ## Current tradeoffs
 
