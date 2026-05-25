@@ -10,6 +10,7 @@ const initialLocalState = {
 };
 
 export default function App() {
+  const [activePage, setActivePage] = useState("overview");
   const [transactions, setTransactions] = useState([]);
   const [budgetSummary, setBudgetSummary] = useState(null);
   const [accounts, setAccounts] = useState([]);
@@ -218,29 +219,93 @@ export default function App() {
     await loadBackendState();
   }
 
-  return (
-    <div className="app-shell">
-      <Sidebar />
-      <main>
-        <section className="topbar" id="overview">
-          <div>
-            <p className="eyebrow">Realtime-ish money cockpit</p>
-            <h1>Know what you can spend before you spend it.</h1>
-          </div>
-          <div className="actions">
-            <label className="upload-button" htmlFor="csvUpload">
-              Upload CSV
-            </label>
-            <input id="csvUpload" type="file" accept=".csv,text/csv" onChange={(event) => importCsv(event.target.files[0])} />
-            <button type="button" onClick={seedDemo}>
-              Load demo
-            </button>
-          </div>
-        </section>
+  function renderActivePage() {
+    if (activePage === "transactions") {
+      return (
+        <>
+          <PageHeader title="Transactions" eyebrow="Ledger" actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />} />
+          <TransactionForm
+            accounts={accounts}
+            accountId={logAccountId}
+            onAccountChange={setLogAccountId}
+            onParseReceipt={api.parseReceipt}
+            onSubmit={addTransaction}
+          />
+          <TransactionTable
+            accounts={accounts}
+            accountFilter={accountFilter}
+            onAccountFilter={setAccountFilter}
+            logAccountId={logAccountId}
+            onLogAccountChange={setLogAccountId}
+            transactions={transactions}
+            search={search}
+            onSearch={setSearch}
+            onRemove={removeTransaction}
+          />
+        </>
+      );
+    }
 
-        <StatusBanner status={status} isLoading={isLoading} onRefresh={loadBackendState} />
+    if (activePage === "budgets") {
+      return (
+        <>
+          <PageHeader title="Budgets" eyebrow="Monthly limits" />
+          <BudgetPanel summary={budgetSummary} onUpdateBudget={updateBudget} onReset={resetBudgets} />
+          <PurchaseAssistant
+            question={purchaseQuestion}
+            result={purchaseResult}
+            onQuestionChange={setPurchaseQuestion}
+            onCheck={checkPurchase}
+          />
+        </>
+      );
+    }
+
+    if (activePage === "planning") {
+      return (
+        <>
+          <PageHeader title="Planning" eyebrow="Future money" />
+          <PaymentPlanner payments={localState.payments} onSubmit={addPayment} onRemove={removePayment} />
+          <PurchaseAssistant
+            question={purchaseQuestion}
+            result={purchaseResult}
+            onQuestionChange={setPurchaseQuestion}
+            onCheck={checkPurchase}
+          />
+        </>
+      );
+    }
+
+    if (activePage === "networth") {
+      return (
+        <>
+          <PageHeader title="Net worth" eyebrow="Balance sheet" />
+          <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
+          <AccountPanel accounts={accounts} onSubmit={addAccount} />
+        </>
+      );
+    }
+
+    if (activePage === "analysis") {
+      return (
+        <>
+          <PageHeader title="Analysis" eyebrow={activeMonth} actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />} />
+          <AnalysisPage
+            analysis={monthlyAnalysis}
+            budgetSummary={budgetSummary}
+            month={activeMonth}
+            payments={localState.payments}
+            summary={summary}
+            transactions={transactions}
+          />
+        </>
+      );
+    }
+
+    return (
+      <>
+        <PageHeader title="Overview" eyebrow={activeMonth} actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />} />
         <Metrics summary={summary} />
-
         <section className="workspace-grid">
           <TransactionForm
             accounts={accounts}
@@ -256,35 +321,32 @@ export default function App() {
             onCheck={checkPurchase}
           />
         </section>
-
-        <section className="workspace-grid">
-          <BudgetPanel summary={budgetSummary} onUpdateBudget={updateBudget} onReset={resetBudgets} />
-          <AccountPanel accounts={accounts} onSubmit={addAccount} />
-        </section>
-
         <ReportsPanel analysis={monthlyAnalysis} month={activeMonth} />
+      </>
+    );
+  }
 
-        <PaymentPlanner payments={localState.payments} onSubmit={addPayment} onRemove={removePayment} />
-
-        <TransactionTable
-          accounts={accounts}
-          accountFilter={accountFilter}
-          onAccountFilter={setAccountFilter}
-          logAccountId={logAccountId}
-          onLogAccountChange={setLogAccountId}
-          transactions={transactions}
-          search={search}
-          onSearch={setSearch}
-          onRemove={removeTransaction}
-        />
-
-        <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
+  return (
+    <div className="app-shell">
+      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <main>
+        <StatusBanner status={status} isLoading={isLoading} onRefresh={loadBackendState} />
+        {renderActivePage()}
       </main>
     </div>
   );
 }
 
-function Sidebar() {
+function Sidebar({ activePage, onNavigate }) {
+  const pages = [
+    ["overview", "Overview"],
+    ["transactions", "Transactions"],
+    ["budgets", "Budgets"],
+    ["planning", "Planning"],
+    ["networth", "Net worth"],
+    ["analysis", "Analysis"],
+  ];
+
   return (
     <aside className="sidebar" aria-label="Primary">
       <div className="brand">
@@ -295,19 +357,48 @@ function Sidebar() {
         </div>
       </div>
       <nav className="nav-list">
-        <a href="#overview" className="active">
-          Overview
-        </a>
-        <a href="#transactions">Transactions</a>
-        <a href="#budgets">Budgets</a>
-        <a href="#planning">Planning</a>
-        <a href="#net-worth">Net worth</a>
+        {pages.map(([id, label]) => (
+          <button
+            type="button"
+            key={id}
+            className={activePage === id ? "active" : ""}
+            onClick={() => onNavigate(id)}
+          >
+            {label}
+          </button>
+        ))}
       </nav>
       <div className="sidebar-note">
         <span>Backend connected</span>
         <p>Transactions, budgets, CSV imports, and purchase decisions now use the FastAPI backend.</p>
       </div>
     </aside>
+  );
+}
+
+function PageHeader({ title, eyebrow, actions = null }) {
+  return (
+    <section className="page-header">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+      </div>
+      {actions}
+    </section>
+  );
+}
+
+function GlobalActions({ onImportCsv, onSeedDemo }) {
+  return (
+    <div className="actions">
+      <label className="upload-button" htmlFor="csvUpload">
+        Upload CSV
+      </label>
+      <input id="csvUpload" type="file" accept=".csv,text/csv" onChange={(event) => onImportCsv(event.target.files[0])} />
+      <button type="button" onClick={onSeedDemo}>
+        Load demo
+      </button>
+    </div>
   );
 }
 
@@ -482,7 +573,7 @@ function TransactionForm({ accounts, accountId, onAccountChange, onParseReceipt,
             Upload receipt
             <input
               type="file"
-              accept="image/*,.pdf"
+              accept="image/*,.txt,text/plain"
               onChange={(event) => setReceipt(event.target.files?.[0] || null)}
             />
           </label>
@@ -692,6 +783,158 @@ function ReportsPanel({ analysis, month }) {
       </div>
       <p className="report-summary">{analysis?.summary || "Add transactions to generate monthly analysis."}</p>
     </section>
+  );
+}
+
+function AnalysisPage({ analysis, budgetSummary, month, payments, summary, transactions }) {
+  const income = Number(analysis?.total_income || 0);
+  const spent = Number(analysis?.total_spent || 0);
+  const saved = Number(analysis?.net_cash_flow || income - spent);
+  const savingsRate = income > 0 ? Math.round((saved / income) * 100) : 0;
+  const upcomingTotal = payments.reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  const subscriptionSpend = Number(
+    budgetSummary?.categories?.find((category) => category.category_name === "Subscriptions")?.spent || 0,
+  );
+  const categoriesOverBudget = budgetSummary?.categories?.filter((category) => Number(category.remaining) < 0) || [];
+  const recentIncome = transactions.filter((transaction) => transaction.category === "Income").slice(0, 5);
+
+  return (
+    <section className="analysis-page">
+      <div className="analysis-grid">
+        <InsightCard label="Money in" value={money(income)} detail={`${recentIncome.length} recent income entries`} />
+        <InsightCard label="Money out" value={money(spent)} detail={`${analysis?.transaction_count || 0} transactions this month`} />
+        <InsightCard label="Saved" value={money(saved)} detail={`${Number.isFinite(savingsRate) ? savingsRate : 0}% savings rate`} />
+        <InsightCard label="Upcoming" value={money(upcomingTotal)} detail={`${payments.length} planned payments`} />
+      </div>
+
+      <section className="workspace-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Budget health</p>
+              <h2>Monthly position</h2>
+            </div>
+            <a className="download-link" href={api.monthlyCsvUrl(month)} download>
+              Download CSV
+            </a>
+          </div>
+          <div className="analysis-stack">
+            <div className="analysis-line">
+              <span>Budget remaining</span>
+              <strong>{money(Number(budgetSummary?.total_remaining || 0))}</strong>
+            </div>
+            <div className="analysis-line">
+              <span>Flexible remaining</span>
+              <strong>{money(summary.flexibleLeft)}</strong>
+            </div>
+            <div className="analysis-line">
+              <span>Subscription spend</span>
+              <strong>{money(subscriptionSpend)}</strong>
+            </div>
+          </div>
+          <p className="report-summary">{analysis?.summary || "Add transactions to generate monthly analysis."}</p>
+          {categoriesOverBudget.length ? (
+            <div className="alert-list">
+              {categoriesOverBudget.map((category) => (
+                <span key={category.category_id}>
+                  {category.category_name} is {money(Math.abs(Number(category.remaining)))} over
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Subscriptions</p>
+              <h2>Recurring watch</h2>
+            </div>
+          </div>
+          <SubscriptionMonitor transactions={transactions} />
+        </article>
+      </section>
+
+      <section className="workspace-grid">
+        <BreakdownPanel title="Spend by category" rows={analysis?.by_category || []} nameKey="category_name" />
+        <BreakdownPanel title="Top merchants" rows={analysis?.top_merchants || []} nameKey="merchant" />
+      </section>
+    </section>
+  );
+}
+
+function InsightCard({ label, value, detail }) {
+  return (
+    <article className="insight-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function BreakdownPanel({ title, rows, nameKey }) {
+  const largest = Math.max(...rows.map((row) => Number(row.total || 0)), 1);
+
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Analysis</p>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      <div className="breakdown-list">
+        {rows.length ? (
+          rows.map((row) => {
+            const total = Number(row.total || 0);
+            return (
+              <div className="breakdown-row" key={row[nameKey]}>
+                <div>
+                  <strong>{row[nameKey]}</strong>
+                  <span>{money(total)}</span>
+                </div>
+                <div className="meter" title={money(total)}>
+                  <span style={{ "--fill": `${Math.max(4, (total / largest) * 100)}%` }} />
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="empty-state">No analysis yet.</div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SubscriptionMonitor({ transactions }) {
+  const subscriptions = transactions
+    .filter((transaction) => transaction.category === "Subscriptions")
+    .reduce((groups, transaction) => {
+      const current = groups.get(transaction.merchant) || { merchant: transaction.merchant, total: 0, count: 0 };
+      current.total += Number(transaction.amount || 0);
+      current.count += 1;
+      groups.set(transaction.merchant, current);
+      return groups;
+    }, new Map());
+  const rows = [...subscriptions.values()].sort((a, b) => b.total - a.total);
+
+  if (!rows.length) {
+    return <div className="empty-state">No subscriptions detected this month.</div>;
+  }
+
+  return (
+    <div className="subscription-list">
+      {rows.map((row) => (
+        <div className="account-row" key={row.merchant}>
+          <strong>{row.merchant}</strong>
+          <span>
+            {money(row.total)} across {row.count} charge{row.count === 1 ? "" : "s"}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
