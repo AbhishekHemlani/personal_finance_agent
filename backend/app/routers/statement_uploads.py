@@ -13,7 +13,8 @@ from ..schemas import (
     StatementPresignResponse,
     StatementUploadRead,
 )
-from ..services.import_pipeline import import_csv_text
+from ..services.import_pipeline import import_csv_text, import_parsed_rows
+from ..services.pdf_statement_parser import parse_statement_pdf
 from ..services.s3_storage import create_presigned_put_url, statement_storage_key
 
 router = APIRouter(prefix="/statement-uploads", tags=["statement-uploads"])
@@ -85,6 +86,59 @@ async def import_statement_csv(
         file_name=upload.file_name,
         account_id=account_id,
         statement_upload_id=upload.id,
+    )
+    upload.status = "processed"
+    upload.import_batch_id = batch.id
+    upload.rows_total = batch.rows_total
+    upload.rows_imported = batch.rows_imported
+    upload.rows_skipped = batch.rows_skipped
+    db.commit()
+
+    for transaction in transactions:
+        db.refresh(transaction)
+
+    return CsvImportResponse(
+        import_batch_id=batch.id,
+        rows_total=batch.rows_total,
+        rows_imported=batch.rows_imported,
+        rows_skipped=batch.rows_skipped,
+        transactions=transactions,
+    )
+
+
+@router.post("/import-pdf", response_model=CsvImportResponse, status_code=status.HTTP_201_CREATED)
+async def import_statement_pdf(
+    user_id: Annotated[str, Depends(get_user_id)],
+    db: Annotated[Session, Depends(get_db)],
+    month: str = Form(..., pattern=r"^\d{4}-\d{2}$"),
+    account_id: str | None = Form(default=None),
+    file: UploadFile = File(...),
+) -> CsvImportResponse:
+    validate_account(db, user_id, account_id)
+    content = await file.read()
+    if not (file.content_type == "application/pdf" or (file.filename or "").lower().endswith(".pdf")):
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Upload a monthly statement PDF.")
+
+    upload = StatementUpload(
+        user_id=user_id,
+        account_id=account_id,
+        statement_month=month,
+        file_name=file.filename or "statement.pdf",
+        content_type=file.content_type,
+        status="processing",
+    )
+    db.add(upload)
+    db.flush()
+
+    parsed_rows = await parse_statement_pdf(content, month=month, file_name=upload.file_name)
+    batch, transactions = import_parsed_rows(
+        db,
+        user_id=user_id,
+        parsed_rows=parsed_rows,
+        file_name=upload.file_name,
+        account_id=account_id,
+        statement_upload_id=upload.id,
+        source="pdf_statement",
     )
     upload.status = "processed"
     upload.import_batch_id = batch.id

@@ -17,10 +17,31 @@ def import_csv_text(
     statement_upload_id: str | None = None,
 ) -> tuple[ImportBatch, list[Transaction]]:
     parsed_rows = parse_csv_transactions(text)
+    return import_parsed_rows(
+        db,
+        user_id=user_id,
+        parsed_rows=parsed_rows,
+        file_name=file_name,
+        account_id=account_id,
+        statement_upload_id=statement_upload_id,
+    )
+
+
+def import_parsed_rows(
+    db: Session,
+    *,
+    user_id: str,
+    parsed_rows: list[dict],
+    file_name: str,
+    account_id: str | None = None,
+    statement_upload_id: str | None = None,
+    source: str = "csv_import",
+) -> tuple[ImportBatch, list[Transaction]]:
     batch = ImportBatch(
         user_id=user_id,
         account_id=account_id,
         statement_upload_id=statement_upload_id,
+        source=source,
         file_name=file_name,
         rows_total=len(parsed_rows),
     )
@@ -45,7 +66,7 @@ def import_csv_text(
             description=parsed["description"],
             amount=money(parsed["amount"]),
             direction=parsed["direction"],
-            source="csv_import",
+            source=source,
             import_batch_id=batch.id,
             categorization_confidence=confidence,
         )

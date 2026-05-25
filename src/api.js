@@ -61,6 +61,35 @@ export const api = {
     });
   },
 
+  importStatementPdf({ file, accountId = "", month }) {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("month", month);
+    if (accountId) body.append("account_id", accountId);
+    return request("/statement-uploads/import-pdf", {
+      method: "POST",
+      body,
+    });
+  },
+
+  createPlaidLinkToken() {
+    return request("/bank-sync/plaid/link-token", { method: "POST" });
+  },
+
+  exchangePlaidPublicToken(publicToken, institutionName = "") {
+    return request("/bank-sync/plaid/exchange-public-token", {
+      method: "POST",
+      body: JSON.stringify({
+        public_token: publicToken,
+        institution_name: institutionName || null,
+      }),
+    });
+  },
+
+  syncBankConnection(connectionId) {
+    return request(`/bank-sync/${connectionId}/sync`, { method: "POST" });
+  },
+
   parseReceipt(file, note = "") {
     const body = new FormData();
     body.append("file", file);

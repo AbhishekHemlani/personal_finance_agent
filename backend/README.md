@@ -131,6 +131,7 @@ Rows are deduplicated by user, account, date, merchant, amount, and direction so
 ```http
 GET /api/statement-uploads
 POST /api/statement-uploads/import-csv
+POST /api/statement-uploads/import-pdf
 POST /api/statement-uploads/presign
 ```
 
@@ -142,6 +143,17 @@ curl -X POST http://127.0.0.1:8000/api/statement-uploads/import-csv \
   -F "month=2026-05" \
   -F "file=@statement.csv"
 ```
+
+PDF statement import extracts text with `pypdf`, then uses the configured OpenAI model to normalize monthly statement rows into transactions:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/statement-uploads/import-pdf \
+  -F "account_id={account_id}" \
+  -F "month=2026-05" \
+  -F "file=@statement.pdf"
+```
+
+Use original bank statement PDFs when possible. Scanned/image-only PDFs need OCR first and may not extract text.
 
 Use `presign` after an S3 bucket is configured. It creates a `statement_uploads` record and returns a short-lived upload URL for storing the original file in S3.
 
@@ -202,6 +214,8 @@ The Plaid flow is backend-ready:
 2. Request a Link token from `/plaid/link-token`.
 3. Exchange the public token from Plaid Link at `/plaid/exchange-public-token`; the access token is encrypted before storage.
 4. Call `/{connection_id}/sync` to create/update accounts and import transactions with deduplication.
+
+For safe local testing, keep Plaid in Sandbox and use Plaid's test credentials in Link. For real bank OAuth flows, you may need an HTTPS redirect URL such as an ngrok or Cloudflare Tunnel URL, or a deployed frontend.
 
 The legacy `/sync` endpoint still exists as a compatibility placeholder.
 

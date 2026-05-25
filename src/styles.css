@@ -469,6 +469,13 @@ button:disabled {
   margin-bottom: 16px;
 }
 
+.statement-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 150px minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
 .account-form button {
   grid-column: span 2;
 }
@@ -532,6 +539,13 @@ button:disabled {
 .report-summary {
   margin: 14px 0 0;
   font-weight: 800;
+}
+
+.helper-copy {
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.45;
+  margin: 0 0 14px;
 }
 
 .analysis-page {
@@ -719,6 +733,7 @@ th:last-child {
   .chat-input-row,
   .receipt-row,
   .account-form,
+  .statement-form,
   .report-grid,
   .ledger-controls {
     grid-template-columns: 1fr;

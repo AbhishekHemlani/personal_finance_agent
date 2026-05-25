@@ -21,6 +21,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [purchaseQuestion, setPurchaseQuestion] = useState("Can I buy dinner for 45?");
   const [purchaseResult, setPurchaseResult] = useState("Ask about any flexible expense and I will check it against your budgets.");
+  const [bankLinkStatus, setBankLinkStatus] = useState("Use Plaid Sandbox first, then switch to Development for a real bank.");
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState("Connecting to backend...");
   const activeMonth = today().slice(0, 7);
@@ -141,6 +142,12 @@ export default function App() {
     await loadBackendState();
   }
 
+  async function importStatementPdf({ file, accountId, month }) {
+    if (!file) return;
+    await api.importStatementPdf({ file, accountId, month });
+    await loadBackendState();
+  }
+
   async function addAccount(formData) {
     const account = await api.createAccount({
       name: formData.get("name").trim(),
@@ -151,6 +158,32 @@ export default function App() {
     });
     setLogAccountId(account.id);
     await loadBackendState();
+  }
+
+  async function connectBankAccount() {
+    setBankLinkStatus("Opening Plaid Link...");
+    try {
+      const { link_token: linkToken } = await api.createPlaidLinkToken();
+      await loadPlaidLinkScript();
+      const handler = window.Plaid.create({
+        token: linkToken,
+        onSuccess: async (publicToken, metadata) => {
+          setBankLinkStatus("Bank linked. Exchanging token and syncing transactions...");
+          const connection = await api.exchangePlaidPublicToken(publicToken, metadata?.institution?.name || "");
+          const result = await api.syncBankConnection(connection.id);
+          setBankLinkStatus(
+            `Synced ${result.transactions_created} transaction${result.transactions_created === 1 ? "" : "s"} from ${metadata?.institution?.name || "bank"}.`,
+          );
+          await loadBackendState();
+        },
+        onExit: (error) => {
+          setBankLinkStatus(error ? `Plaid Link closed: ${error.display_message || error.error_message}` : "Plaid Link closed.");
+        },
+      });
+      handler.open();
+    } catch (error) {
+      setBankLinkStatus(`Could not start bank link: ${friendlyError(error)}`);
+    }
   }
 
   async function checkPurchase() {
@@ -231,6 +264,7 @@ export default function App() {
             onParseReceipt={api.parseReceipt}
             onSubmit={addTransaction}
           />
+          <StatementPdfImportPanel accounts={accounts} month={activeMonth} onImport={importStatementPdf} />
           <TransactionTable
             accounts={accounts}
             accountFilter={accountFilter}
@@ -265,6 +299,7 @@ export default function App() {
       return (
         <>
           <PageHeader title="Planning" eyebrow="Future money" />
+          <RecurringPaymentsPanel transactions={transactions} />
           <PaymentPlanner payments={localState.payments} onSubmit={addPayment} onRemove={removePayment} />
           <PurchaseAssistant
             question={purchaseQuestion}
@@ -281,7 +316,7 @@ export default function App() {
         <>
           <PageHeader title="Net worth" eyebrow="Balance sheet" />
           <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
-          <AccountPanel accounts={accounts} onSubmit={addAccount} />
+          <AccountPanel accounts={accounts} bankLinkStatus={bankLinkStatus} onConnectBank={connectBankAccount} onSubmit={addAccount} />
         </>
       );
     }
@@ -322,6 +357,7 @@ export default function App() {
           />
         </section>
         <ReportsPanel analysis={monthlyAnalysis} month={activeMonth} />
+        <RecurringPaymentsPanel transactions={transactions} compact />
       </>
     );
   }
@@ -709,7 +745,7 @@ function NetWorthPanel({ netWorth, onSubmit }) {
   );
 }
 
-function AccountPanel({ accounts, onSubmit }) {
+function AccountPanel({ accounts, bankLinkStatus, onConnectBank, onSubmit }) {
   return (
     <article className="panel" id="accounts">
       <div className="panel-header">
@@ -717,7 +753,13 @@ function AccountPanel({ accounts, onSubmit }) {
           <p className="eyebrow">Accounts and cards</p>
           <h2>Linked ledgers</h2>
         </div>
+        {onConnectBank ? (
+          <button type="button" onClick={onConnectBank}>
+            Link bank
+          </button>
+        ) : null}
       </div>
+      {bankLinkStatus ? <p className="helper-copy">{bankLinkStatus}</p> : null}
       <form
         className="account-form"
         onSubmit={(event) => {
@@ -751,6 +793,65 @@ function AccountPanel({ accounts, onSubmit }) {
           <div className="empty-state">Add a card or bank account to separate your ledgers.</div>
         )}
       </div>
+    </article>
+  );
+}
+
+function StatementPdfImportPanel({ accounts, month, onImport }) {
+  const [status, setStatus] = useState("Upload an original bank or card statement PDF to extract monthly transactions.");
+
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Statements</p>
+          <h2>Import monthly PDF</h2>
+        </div>
+      </div>
+      <form
+        className="statement-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const formData = new FormData(form);
+          const file = formData.get("file");
+          setStatus("Parsing statement PDF...");
+          try {
+            const result = await onImport({
+              file,
+              accountId: formData.get("account_id"),
+              month: formData.get("month"),
+            });
+            setStatus(`Imported ${result.rows_imported} transactions and skipped ${result.rows_skipped}.`);
+            form.reset();
+            form.month.value = month;
+          } catch (error) {
+            setStatus(`Could not import statement: ${friendlyError(error)}`);
+          }
+        }}
+      >
+        <label>
+          Account
+          <select name="account_id">
+            <option value="">Unassigned</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Month
+          <input name="month" type="month" defaultValue={month} required />
+        </label>
+        <label>
+          PDF statement
+          <input name="file" type="file" accept="application/pdf,.pdf" required />
+        </label>
+        <button type="submit">Import PDF</button>
+      </form>
+      <p className="helper-copy">{status}</p>
     </article>
   );
 }
@@ -851,7 +952,7 @@ function AnalysisPage({ analysis, budgetSummary, month, payments, summary, trans
               <h2>Recurring watch</h2>
             </div>
           </div>
-          <SubscriptionMonitor transactions={transactions} />
+          <RecurringPaymentsPanel transactions={transactions} compact />
         </article>
       </section>
 
@@ -908,33 +1009,34 @@ function BreakdownPanel({ title, rows, nameKey }) {
   );
 }
 
-function SubscriptionMonitor({ transactions }) {
-  const subscriptions = transactions
-    .filter((transaction) => transaction.category === "Subscriptions")
-    .reduce((groups, transaction) => {
-      const current = groups.get(transaction.merchant) || { merchant: transaction.merchant, total: 0, count: 0 };
-      current.total += Number(transaction.amount || 0);
-      current.count += 1;
-      groups.set(transaction.merchant, current);
-      return groups;
-    }, new Map());
-  const rows = [...subscriptions.values()].sort((a, b) => b.total - a.total);
-
-  if (!rows.length) {
-    return <div className="empty-state">No subscriptions detected this month.</div>;
-  }
+function RecurringPaymentsPanel({ transactions, compact = false }) {
+  const rows = getRecurringSubscriptions(transactions);
 
   return (
-    <div className="subscription-list">
-      {rows.map((row) => (
-        <div className="account-row" key={row.merchant}>
-          <strong>{row.merchant}</strong>
-          <span>
-            {money(row.total)} across {row.count} charge{row.count === 1 ? "" : "s"}
-          </span>
+    <article className={compact ? "" : "panel"}>
+      {!compact ? (
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Recurring</p>
+            <h2>Subscriptions and upcoming charges</h2>
+          </div>
         </div>
-      ))}
-    </div>
+      ) : null}
+      <div className="subscription-list">
+        {rows.length ? (
+          rows.map((row) => (
+            <div className="account-row" key={row.merchant}>
+              <strong>{row.merchant}</strong>
+              <span>
+                {money(row.averageAmount)} expected {formatDate(row.nextDate)}
+              </span>
+            </div>
+          ))
+        ) : (
+          <div className="empty-state">No subscriptions detected this month.</div>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -1120,6 +1222,59 @@ function CategoryField() {
       </select>
     </label>
   );
+}
+
+function getRecurringSubscriptions(transactions) {
+  const groups = transactions
+    .filter((transaction) => {
+      const text = `${transaction.merchant} ${transaction.category} ${transaction.note}`.toLowerCase();
+      return transaction.category === "Subscriptions" || ["subscription", "netflix", "spotify", "hulu", "apple.com"].some((term) => text.includes(term));
+    })
+    .reduce((map, transaction) => {
+      const current = map.get(transaction.merchant) || {
+        merchant: transaction.merchant,
+        total: 0,
+        count: 0,
+        latestDate: transaction.date,
+      };
+      current.total += Number(transaction.amount || 0);
+      current.count += 1;
+      if (transaction.date > current.latestDate) current.latestDate = transaction.date;
+      map.set(transaction.merchant, current);
+      return map;
+    }, new Map());
+
+  return [...groups.values()]
+    .map((row) => ({
+      ...row,
+      averageAmount: row.total / row.count,
+      nextDate: addMonths(row.latestDate, 1),
+    }))
+    .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+}
+
+function addMonths(isoDate, months) {
+  const date = new Date(`${isoDate}T00:00:00`);
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
+function loadPlaidLinkScript() {
+  if (window.Plaid) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"]');
+    if (existingScript) {
+      existingScript.addEventListener("load", resolve, { once: true });
+      existingScript.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Could not load Plaid Link."));
+    document.body.appendChild(script);
+  });
 }
 
 function fromApiTransaction(transaction) {
