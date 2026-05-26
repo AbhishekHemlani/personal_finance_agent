@@ -17,7 +17,13 @@ def encrypt_secret(value: str) -> str:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Install backend requirements to enable encrypted token storage.",
         ) from exc
-    return Fernet(key.encode()).encrypt(value.encode()).decode()
+    try:
+        return Fernet(key.encode()).encrypt(value.encode()).decode()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LEDGERLY_TOKEN_ENCRYPTION_KEY must be a valid Fernet key.",
+        ) from exc
 
 
 def decrypt_secret(value: str) -> str:
@@ -34,4 +40,10 @@ def decrypt_secret(value: str) -> str:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Install backend requirements to enable encrypted token storage.",
         ) from exc
-    return Fernet(key.encode()).decrypt(value.encode()).decode()
+    try:
+        return Fernet(key.encode()).decrypt(value.encode()).decode()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LEDGERLY_TOKEN_ENCRYPTION_KEY must be a valid Fernet key.",
+        ) from exc
