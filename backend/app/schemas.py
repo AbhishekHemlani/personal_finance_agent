@@ -259,3 +259,40 @@ class MonthlyAnalysisResponse(BaseModel):
     by_account: list[AccountSpendRead]
     top_merchants: list[MerchantSpendRead]
     summary: str
+
+
+class PlannedPaymentContext(BaseModel):
+    date: DateType
+    name: str
+    category: str
+    amount: Decimal
+
+
+class NetWorthContext(BaseModel):
+    cash: Decimal = Decimal("0.00")
+    investments: Decimal = Decimal("0.00")
+    assets: Decimal = Decimal("0.00")
+    debts: Decimal = Decimal("0.00")
+
+
+class FinancialBrainRequest(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    payments: list[PlannedPaymentContext] = Field(default_factory=list)
+    net_worth: NetWorthContext = Field(default_factory=NetWorthContext)
+
+
+class FinancialBrainOpportunity(BaseModel):
+    title: str
+    category: str
+    estimated_monthly_savings: Decimal
+    rationale: str
+    next_action: str
+
+
+class FinancialBrainResponse(BaseModel):
+    month: str
+    summary: str
+    savings_opportunities: list[FinancialBrainOpportunity]
+    planning_notes: list[str]
+    risk_flags: list[str]
+    confidence: Decimal

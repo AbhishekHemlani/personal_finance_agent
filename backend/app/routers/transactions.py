@@ -10,6 +10,7 @@ from ..models import Account, Transaction
 from ..schemas import TransactionCreate, TransactionRead, TransactionUpdate
 from ..services.categories import categorize_merchant, ensure_default_categories, get_or_create_category
 from ..services.budgets import money
+from ..services.dates import month_bounds
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -20,6 +21,7 @@ def list_transactions(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=250)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
     account_id: str | None = None,
 ) -> list[Transaction]:
     ensure_default_categories(db, user_id)
@@ -30,6 +32,9 @@ def list_transactions(
     )
     if account_id:
         statement = statement.where(Transaction.account_id == account_id)
+    if month:
+        period_start, period_end = month_bounds(month)
+        statement = statement.where(Transaction.date >= period_start, Transaction.date <= period_end)
     return list(
         db.scalars(
             statement.order_by(Transaction.date.desc(), Transaction.created_at.desc()).limit(limit).offset(offset),

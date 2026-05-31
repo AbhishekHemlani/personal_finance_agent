@@ -21,8 +21,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  listTransactions(accountId = "") {
-    const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : "";
+  listTransactions(accountId = "", month = "") {
+    const params = new URLSearchParams();
+    if (accountId) params.set("account_id", accountId);
+    if (month) params.set("month", month);
+    const query = params.toString() ? `?${params.toString()}` : "";
     return request(`/transactions${query}`);
   },
 
@@ -120,6 +123,13 @@ export const api = {
 
   monthlyAnalysis(month) {
     return request(`/reports/monthly-analysis?month=${encodeURIComponent(month)}`);
+  },
+
+  financialBrain(payload) {
+    return request("/reports/financial-brain", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   monthlyCsvUrl(month) {

@@ -182,6 +182,45 @@ h2 {
   justify-content: flex-end;
 }
 
+.page-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+}
+
+.month-filter {
+  min-height: 42px;
+  display: inline-grid;
+  grid-template-columns: 42px minmax(150px, auto) 42px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.month-filter input {
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  padding: 0 10px;
+  font-weight: 800;
+}
+
+.icon-button {
+  width: 42px;
+  min-width: 42px;
+  padding: 0;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.month-reset {
+  color: var(--teal);
+  padding: 0 6px;
+}
+
 #csvUpload {
   position: absolute;
   inline-size: 1px;
@@ -282,6 +321,11 @@ h2 {
 .form-grid.payments {
   grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
   margin-bottom: 18px;
+}
+
+.form-grid.reminders {
+  grid-template-columns: 160px minmax(180px, 0.8fr) minmax(240px, 1fr) auto;
+  margin-bottom: 14px;
 }
 
 label {
@@ -399,6 +443,10 @@ button:disabled {
   opacity: 0;
 }
 
+.receipt-context {
+  max-width: 720px;
+}
+
 .chat-input-row {
   grid-template-columns: minmax(0, 1fr) 140px;
 }
@@ -485,6 +533,52 @@ button:disabled {
   gap: 10px;
 }
 
+.reminder-list {
+  display: grid;
+  gap: 10px;
+}
+
+.reminder-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffefa;
+}
+
+.reminder-row.due {
+  border-color: rgba(215, 95, 66, 0.45);
+  background: #fff6f2;
+}
+
+.reminder-row.done {
+  opacity: 0.64;
+}
+
+.reminder-row.done strong {
+  text-decoration: line-through;
+}
+
+.reminder-row span {
+  color: var(--muted);
+  display: block;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.check-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: #eef7f4;
+  color: var(--green);
+}
+
 .account-row {
   display: flex;
   justify-content: space-between;
@@ -551,6 +645,69 @@ button:disabled {
 .analysis-page {
   display: grid;
   gap: 16px;
+}
+
+.brain-panel {
+  border-color: rgba(6, 122, 143, 0.28);
+}
+
+.brain-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.brain-summary {
+  border: 1px solid #cfe5de;
+  border-radius: 8px;
+  background: #eef7f4;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.brain-summary span,
+.brain-list span,
+.opportunity-card span,
+.opportunity-card small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.opportunity-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.opportunity-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.opportunity-card div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.opportunity-card b {
+  font-size: 1.35rem;
+}
+
+.opportunity-card p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.brain-list {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: grid;
+  gap: 8px;
 }
 
 .analysis-grid {
@@ -690,8 +847,13 @@ th:last-child {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .opportunity-list {
+    grid-template-columns: 1fr;
+  }
+
   .form-grid,
-  .form-grid.payments {
+  .form-grid.payments,
+  .form-grid.reminders {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -708,17 +870,30 @@ th:last-child {
 
   .actions,
   .actions button,
-  .upload-button {
+  .upload-button,
+  .page-tools,
+  .month-filter {
     width: 100%;
+  }
+
+  .month-filter {
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+  }
+
+  .month-reset {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 
   .nav-list,
   .metric-grid,
   .analysis-grid,
+  .opportunity-list,
   .workspace-grid,
   .form-grid,
   .form-grid.compact,
-  .form-grid.payments {
+  .form-grid.payments,
+  .form-grid.reminders {
     grid-template-columns: 1fr;
   }
 

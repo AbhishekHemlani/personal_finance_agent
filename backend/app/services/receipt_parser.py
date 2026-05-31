@@ -27,7 +27,7 @@ DATE_PATTERNS = [
 def parse_receipt_text(text: str, fallback_note: str = "") -> ReceiptParseResponse:
     clean_text = text.strip()
     merchant = infer_receipt_merchant(clean_text) or "Receipt purchase"
-    amount = infer_receipt_total(clean_text)
+    amount = adjust_amount_for_user_context(infer_receipt_total(clean_text), fallback_note)
     purchased_at = infer_receipt_date(clean_text) or date.today()
     category, confidence = categorize_merchant(f"{merchant} {fallback_note}", "expense")
     note = " | ".join(part for part in [fallback_note.strip(), compact_text(clean_text)] if part)
@@ -56,6 +56,9 @@ async def parse_receipt_image(content: bytes, content_type: str, fallback_note: 
         "Extract one purchase transaction from this receipt. Return only JSON with keys "
         "date as YYYY-MM-DD or null, merchant, amount as a number, category, confidence between 0 and 1, and note. "
         "Use the final paid total, not subtotal, tax, tip, change, balance, or rewards. "
+        "If the user note says they only paid part of the receipt, return only the user's share. "
+        "Examples: paid half means amount is 50% of the receipt total; split 3 ways means one third; "
+        "paid 2 of 4 means one half. "
         "Choose category from Coffee, Rent, Groceries, Eating out, Entertainment, Subscriptions, Transport, "
         "Shopping, Utilities, or Other. "
         "If a user note is present, use it only as context. "
@@ -65,7 +68,7 @@ async def parse_receipt_image(content: bytes, content_type: str, fallback_note: 
     data = parse_json_response(response)
 
     merchant = str(data.get("merchant") or "Receipt purchase").strip()
-    amount = decimal_from_any(data.get("amount"))
+    amount = adjust_amount_for_user_context(decimal_from_any(data.get("amount")), fallback_note)
     purchased_at = parse_date_value(data.get("date")) or date.today()
     category = normalize_category(str(data.get("category") or ""), merchant, fallback_note)
     confidence = decimal_from_any(data.get("confidence") or "0.75")
@@ -193,3 +196,34 @@ def normalize_category(category: str, merchant: str, fallback_note: str) -> str:
     if clean in allowed:
         return clean
     return categorize_merchant(f"{merchant} {fallback_note}", "expense")[0]
+
+
+def adjust_amount_for_user_context(amount: Decimal, fallback_note: str) -> Decimal:
+    note = fallback_note.lower()
+    if amount <= 0 or not note:
+        return amount
+
+    paid_of_match = re.search(r"\b(?:paid|paying|covered)\s+(\d+(?:\.\d+)?)\s+(?:of|out\s+of)\s+(\d+(?:\.\d+)?)\b", note)
+    if paid_of_match:
+        numerator = decimal_from_any(paid_of_match.group(1))
+        denominator = decimal_from_any(paid_of_match.group(2))
+        if numerator > 0 and denominator > 0:
+            return money(amount * numerator / denominator)
+
+    split_match = re.search(r"\bsplit\s+(\d+)\s+(?:ways|people|persons)\b", note)
+    if split_match:
+        parts = decimal_from_any(split_match.group(1))
+        if parts > 0:
+            return money(amount / parts)
+
+    fraction_match = re.search(r"\b(?:paid|paying|my\s+share\s+is|only)\s*(\d+)\s*/\s*(\d+)\b", note)
+    if fraction_match:
+        numerator = decimal_from_any(fraction_match.group(1))
+        denominator = decimal_from_any(fraction_match.group(2))
+        if numerator > 0 and denominator > 0:
+            return money(amount * numerator / denominator)
+
+    if re.search(r"\b(?:paid|paying|covered|owe|owed|my share|only paid)\s+(?:half|50%)\b", note):
+        return money(amount / Decimal("2"))
+
+    return amount

@@ -7,7 +7,14 @@ class Settings(BaseSettings):
     app_name: str = "Ledgerly API"
     api_prefix: str = "/api"
     database_url: str = "postgresql+psycopg://ledgerly:ledgerly@localhost:5433/ledgerly"
-    cors_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5174",
+        "http://127.0.0.1:5175",
+        "http://localhost:5175",
+    ]
     token_encryption_key: str | None = None
     plaid_client_id: str | None = None
     plaid_secret: str | None = None

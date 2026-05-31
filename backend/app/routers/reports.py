@@ -12,9 +12,17 @@ from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..dependencies import get_user_id
 from ..models import Transaction
-from ..schemas import AccountSpendRead, CategorySpendRead, MerchantSpendRead, MonthlyAnalysisResponse
+from ..schemas import (
+    AccountSpendRead,
+    CategorySpendRead,
+    FinancialBrainRequest,
+    FinancialBrainResponse,
+    MerchantSpendRead,
+    MonthlyAnalysisResponse,
+)
 from ..services.budgets import money
 from ..services.dates import month_bounds
+from ..services.financial_brain import make_financial_brain_report
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -104,6 +112,15 @@ def monthly_analysis(
         ],
         summary=summary,
     )
+
+
+@router.post("/financial-brain", response_model=FinancialBrainResponse)
+async def financial_brain(
+    payload: FinancialBrainRequest,
+    user_id: Annotated[str, Depends(get_user_id)],
+    db: Annotated[Session, Depends(get_db)],
+) -> FinancialBrainResponse:
+    return await make_financial_brain_report(db, user_id, payload)
 
 
 def transactions_for_month(db: Session, user_id: str, month: str) -> list[Transaction]:

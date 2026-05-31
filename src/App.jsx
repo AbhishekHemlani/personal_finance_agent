@@ -6,6 +6,7 @@ const localStorageKey = "ledgerly-local-planning-v1";
 
 const initialLocalState = {
   payments: [],
+  reminders: [],
   netWorth: { cash: 0, investments: 0, assets: 0, debts: 0 },
 };
 
@@ -17,6 +18,8 @@ export default function App() {
   const [accountFilter, setAccountFilter] = useState("");
   const [logAccountId, setLogAccountId] = useState("");
   const [monthlyAnalysis, setMonthlyAnalysis] = useState(null);
+  const [brainReport, setBrainReport] = useState(null);
+  const [brainStatus, setBrainStatus] = useState("Ready to analyze your ledger, budgets, accounts, statements, and planned payments.");
   const [localState, setLocalState] = useState(loadLocalState);
   const [search, setSearch] = useState("");
   const [purchaseQuestion, setPurchaseQuestion] = useState("Can I buy dinner for 45?");
@@ -24,13 +27,13 @@ export default function App() {
   const [bankLinkStatus, setBankLinkStatus] = useState("Use Plaid Sandbox first, then switch to Development for a real bank.");
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState("Connecting to backend...");
-  const activeMonth = today().slice(0, 7);
+  const [activeMonth, setActiveMonth] = useState(today().slice(0, 7));
 
   const loadBackendState = useCallback(async () => {
     setIsLoading(true);
     try {
       const [transactionRows, summary] = await Promise.all([
-        api.listTransactions(accountFilter),
+        api.listTransactions(accountFilter, activeMonth),
         api.budgetSummary(activeMonth),
       ]);
       const [accountRows, analysis] = await Promise.all([
@@ -57,6 +60,11 @@ export default function App() {
     localStorage.setItem(localStorageKey, JSON.stringify(localState));
   }, [localState]);
 
+  useEffect(() => {
+    setBrainReport(null);
+    setBrainStatus("Ready to analyze your ledger, budgets, accounts, statements, and planned payments.");
+  }, [activeMonth]);
+
   const summary = useMemo(() => {
     const flexibleCategories = ["Coffee", "Eating out", "Entertainment", "Shopping", "Other"];
     const flexibleLeft = budgetSummary?.categories
@@ -73,6 +81,20 @@ export default function App() {
       flexibleLeft: Number(flexibleLeft || 0),
     };
   }, [budgetSummary, localState.netWorth]);
+  const visiblePayments = useMemo(
+    () => localState.payments.filter((payment) => payment.date?.startsWith(activeMonth)),
+    [activeMonth, localState.payments],
+  );
+  const visibleReminders = useMemo(
+    () => localState.reminders.filter((reminder) => reminder.dueDate?.startsWith(activeMonth) || !reminder.completedAt),
+    [activeMonth, localState.reminders],
+  );
+
+  useEffect(() => {
+    notifyDueReminders(localState.reminders, setLocalState);
+    const timer = window.setInterval(() => notifyDueReminders(localState.reminders, setLocalState), 60_000);
+    return () => window.clearInterval(timer);
+  }, [localState.reminders]);
 
   async function addTransaction(expense) {
     await api.createTransaction({
@@ -100,6 +122,45 @@ export default function App() {
           amount: Number(formData.get("amount")),
         },
       ],
+    }));
+  }
+
+  function addReminder(formData) {
+    const dueDate = formData.get("dueDate");
+    const title = formData.get("title").trim();
+    const note = formData.get("note").trim();
+    if (!dueDate || !title) return;
+
+    setLocalState((current) => ({
+      ...current,
+      reminders: [
+        ...current.reminders,
+        {
+          id: crypto.randomUUID(),
+          dueDate,
+          title,
+          note,
+          createdAt: new Date().toISOString(),
+          notifiedAt: null,
+          completedAt: null,
+        },
+      ],
+    }));
+  }
+
+  function completeReminder(id) {
+    setLocalState((current) => ({
+      ...current,
+      reminders: current.reminders.map((reminder) =>
+        reminder.id === id ? { ...reminder, completedAt: reminder.completedAt ? null : new Date().toISOString() } : reminder,
+      ),
+    }));
+  }
+
+  function removeReminder(id) {
+    setLocalState((current) => ({
+      ...current,
+      reminders: current.reminders.filter((reminder) => reminder.id !== id),
     }));
   }
 
@@ -202,6 +263,31 @@ export default function App() {
     await loadBackendState();
   }
 
+  async function generateFinancialBrainReport() {
+    setBrainStatus("Analyzing your financial context...");
+    try {
+      const report = await api.financialBrain({
+        month: activeMonth,
+        payments: visiblePayments.map((payment) => ({
+          date: payment.date,
+          name: payment.name,
+          category: payment.category,
+          amount: Number(payment.amount || 0),
+        })),
+        net_worth: {
+          cash: Number(localState.netWorth.cash || 0),
+          investments: Number(localState.netWorth.investments || 0),
+          assets: Number(localState.netWorth.assets || 0),
+          debts: Number(localState.netWorth.debts || 0),
+        },
+      });
+      setBrainReport(report);
+      setBrainStatus("Analysis updated from your current financial context.");
+    } catch (error) {
+      setBrainStatus(`Could not generate analysis: ${friendlyError(error)}`);
+    }
+  }
+
   async function seedDemo() {
     const month = today().slice(0, 8);
     const demoTransactions = [
@@ -256,7 +342,13 @@ export default function App() {
     if (activePage === "transactions") {
       return (
         <>
-          <PageHeader title="Transactions" eyebrow="Ledger" actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />} />
+          <PageHeader
+            title="Transactions"
+            eyebrow="Ledger"
+            month={activeMonth}
+            onMonthChange={setActiveMonth}
+            actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />}
+          />
           <TransactionForm
             accounts={accounts}
             accountId={logAccountId}
@@ -283,7 +375,7 @@ export default function App() {
     if (activePage === "budgets") {
       return (
         <>
-          <PageHeader title="Budgets" eyebrow="Monthly limits" />
+          <PageHeader title="Budgets" eyebrow="Monthly limits" month={activeMonth} onMonthChange={setActiveMonth} />
           <BudgetPanel summary={budgetSummary} onUpdateBudget={updateBudget} onReset={resetBudgets} />
           <PurchaseAssistant
             question={purchaseQuestion}
@@ -298,9 +390,16 @@ export default function App() {
     if (activePage === "planning") {
       return (
         <>
-          <PageHeader title="Planning" eyebrow="Future money" />
+          <PageHeader title="Planning" eyebrow="Future money" month={activeMonth} onMonthChange={setActiveMonth} />
           <RecurringPaymentsPanel transactions={transactions} />
-          <PaymentPlanner payments={localState.payments} onSubmit={addPayment} onRemove={removePayment} />
+          <PaymentPlanner payments={visiblePayments} activeMonth={activeMonth} onSubmit={addPayment} onRemove={removePayment} />
+          <RemindersPanel
+            activeMonth={activeMonth}
+            reminders={visibleReminders}
+            onComplete={completeReminder}
+            onRemove={removeReminder}
+            onSubmit={addReminder}
+          />
           <PurchaseAssistant
             question={purchaseQuestion}
             result={purchaseResult}
@@ -314,7 +413,7 @@ export default function App() {
     if (activePage === "networth") {
       return (
         <>
-          <PageHeader title="Net worth" eyebrow="Balance sheet" />
+          <PageHeader title="Net worth" eyebrow="Balance sheet" month={activeMonth} onMonthChange={setActiveMonth} />
           <NetWorthPanel netWorth={localState.netWorth} onSubmit={updateNetWorth} />
           <AccountPanel accounts={accounts} bankLinkStatus={bankLinkStatus} onConnectBank={connectBankAccount} onSubmit={addAccount} />
         </>
@@ -324,12 +423,21 @@ export default function App() {
     if (activePage === "analysis") {
       return (
         <>
-          <PageHeader title="Analysis" eyebrow={activeMonth} actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />} />
+          <PageHeader
+            title="Analysis"
+            eyebrow={activeMonth}
+            month={activeMonth}
+            onMonthChange={setActiveMonth}
+            actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />}
+          />
           <AnalysisPage
             analysis={monthlyAnalysis}
+            brainReport={brainReport}
+            brainStatus={brainStatus}
             budgetSummary={budgetSummary}
             month={activeMonth}
-            payments={localState.payments}
+            onGenerateBrain={generateFinancialBrainReport}
+            payments={visiblePayments}
             summary={summary}
             transactions={transactions}
           />
@@ -339,7 +447,13 @@ export default function App() {
 
     return (
       <>
-        <PageHeader title="Overview" eyebrow={activeMonth} actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />} />
+        <PageHeader
+          title="Overview"
+          eyebrow={activeMonth}
+          month={activeMonth}
+          onMonthChange={setActiveMonth}
+          actions={<GlobalActions onImportCsv={importCsv} onSeedDemo={seedDemo} />}
+        />
         <Metrics summary={summary} />
         <section className="workspace-grid">
           <TransactionForm
@@ -412,15 +526,36 @@ function Sidebar({ activePage, onNavigate }) {
   );
 }
 
-function PageHeader({ title, eyebrow, actions = null }) {
+function PageHeader({ title, eyebrow, month, onMonthChange, actions = null }) {
   return (
     <section className="page-header">
       <div>
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
       </div>
-      {actions}
+      <div className="page-tools">
+        {month && onMonthChange ? <MonthFilter month={month} onMonthChange={onMonthChange} /> : null}
+        {actions}
+      </div>
     </section>
+  );
+}
+
+function MonthFilter({ month, onMonthChange }) {
+  const currentMonth = today().slice(0, 7);
+  return (
+    <div className="month-filter" aria-label="Month filter">
+      <button type="button" className="icon-button" onClick={() => onMonthChange(shiftMonth(month, -1))} aria-label="Previous month">
+        ‹
+      </button>
+      <input type="month" value={month} onChange={(event) => onMonthChange(event.target.value || currentMonth)} />
+      <button type="button" className="icon-button" onClick={() => onMonthChange(shiftMonth(month, 1))} aria-label="Next month">
+        ›
+      </button>
+      <button type="button" className="text-button month-reset" onClick={() => onMonthChange(currentMonth)}>
+        This month
+      </button>
+    </div>
   );
 }
 
@@ -482,6 +617,7 @@ function Metric({ title, value, caption, alert = false }) {
 function TransactionForm({ accounts, accountId, onAccountChange, onParseReceipt, onSubmit }) {
   const [message, setMessage] = useState("");
   const [receipt, setReceipt] = useState(null);
+  const [receiptContext, setReceiptContext] = useState("");
   const [chatMessages, setChatMessages] = useState([
     {
       id: "welcome",
@@ -503,21 +639,24 @@ function TransactionForm({ accounts, accountId, onAccountChange, onParseReceipt,
       {
         id: crypto.randomUUID(),
         role: "user",
-        text: receipt ? `${text || "Uploaded receipt"} [receipt: ${receipt.name}]` : text,
+        text: receipt
+          ? `${text || "Uploaded receipt"}${receiptContext ? ` (${receiptContext})` : ""} [receipt: ${receipt.name}]`
+          : text,
       },
     ]);
 
     setIsSubmitting(true);
-    let parsed = text ? parseExpenseMessage(text, receipt) : null;
-    if (receipt && (!parsed || !parsed.amount)) {
+    const combinedContext = [text, receiptContext].filter(Boolean).join(" | ");
+    let parsed = receipt ? null : text ? parseExpenseMessage(text) : null;
+    if (receipt) {
       try {
-        const receiptResult = await onParseReceipt(receipt, text);
+        const receiptResult = await onParseReceipt(receipt, combinedContext);
         parsed = {
           date: receiptResult.date,
           merchant: receiptResult.merchant,
           category: receiptResult.category,
           amount: Number(receiptResult.amount),
-          note: [text, receiptResult.note, `Receipt attached: ${receipt.name}`].filter(Boolean).join(" | "),
+          note: [combinedContext, receiptResult.note, `Receipt attached: ${receipt.name}`].filter(Boolean).join(" | "),
         };
       } catch (error) {
         setChatMessages((current) => [
@@ -558,6 +697,7 @@ function TransactionForm({ accounts, accountId, onAccountChange, onParseReceipt,
         },
       ]);
       setMessage("");
+      setReceiptContext("");
       setReceipt(null);
       form.reset();
     } catch (error) {
@@ -615,6 +755,17 @@ function TransactionForm({ accounts, accountId, onAccountChange, onParseReceipt,
           </label>
           <span>{receipt ? receipt.name : "No receipt attached"}</span>
         </div>
+        {receipt ? (
+          <label className="receipt-context">
+            Receipt context
+            <input
+              type="text"
+              value={receiptContext}
+              onChange={(event) => setReceiptContext(event.target.value)}
+              placeholder="Example: I only paid half, split 3 ways, or reimbursed later"
+            />
+          </label>
+        ) : null}
         <div className="chat-input-row">
           <textarea
             value={message}
@@ -887,7 +1038,7 @@ function ReportsPanel({ analysis, month }) {
   );
 }
 
-function AnalysisPage({ analysis, budgetSummary, month, payments, summary, transactions }) {
+function AnalysisPage({ analysis, brainReport, brainStatus, budgetSummary, month, onGenerateBrain, payments, summary, transactions }) {
   const income = Number(analysis?.total_income || 0);
   const spent = Number(analysis?.total_spent || 0);
   const saved = Number(analysis?.net_cash_flow || income - spent);
@@ -907,6 +1058,8 @@ function AnalysisPage({ analysis, budgetSummary, month, payments, summary, trans
         <InsightCard label="Saved" value={money(saved)} detail={`${Number.isFinite(savingsRate) ? savingsRate : 0}% savings rate`} />
         <InsightCard label="Upcoming" value={money(upcomingTotal)} detail={`${payments.length} planned payments`} />
       </div>
+
+      <FinancialBrainPanel report={brainReport} status={brainStatus} onGenerate={onGenerateBrain} />
 
       <section className="workspace-grid">
         <article className="panel">
@@ -961,6 +1114,63 @@ function AnalysisPage({ analysis, budgetSummary, month, payments, summary, trans
         <BreakdownPanel title="Top merchants" rows={analysis?.top_merchants || []} nameKey="merchant" />
       </section>
     </section>
+  );
+}
+
+function FinancialBrainPanel({ report, status, onGenerate }) {
+  return (
+    <article className="panel brain-panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Financial brain</p>
+          <h2>Where can I save?</h2>
+        </div>
+        <button type="button" onClick={onGenerate}>
+          Analyze
+        </button>
+      </div>
+      <p className="helper-copy">{status}</p>
+      {report ? (
+        <div className="brain-grid">
+          <div className="brain-summary">
+            <strong>{report.summary}</strong>
+            <span>Confidence {Math.round(Number(report.confidence || 0) * 100)}%</span>
+          </div>
+          <div className="opportunity-list">
+            {report.savings_opportunities?.length ? (
+              report.savings_opportunities.map((item) => (
+                <div className="opportunity-card" key={`${item.title}-${item.category}`}>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <span>{item.category}</span>
+                  </div>
+                  <b>{money(Number(item.estimated_monthly_savings || 0))}/mo</b>
+                  <p>{item.rationale}</p>
+                  <small>{item.next_action}</small>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">No savings opportunities found yet.</div>
+            )}
+          </div>
+          <BrainList title="Planning notes" items={report.planning_notes || []} />
+          <BrainList title="Risk flags" items={report.risk_flags || []} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function BrainList({ title, items }) {
+  return (
+    <div className="brain-list">
+      <strong>{title}</strong>
+      {items.length ? (
+        items.map((item) => <span key={item}>{item}</span>)
+      ) : (
+        <span>No items right now.</span>
+      )}
+    </div>
   );
 }
 
@@ -1040,8 +1250,9 @@ function RecurringPaymentsPanel({ transactions, compact = false }) {
   );
 }
 
-function PaymentPlanner({ payments, onSubmit, onRemove }) {
+function PaymentPlanner({ payments, activeMonth, onSubmit, onRemove }) {
   const sortedPayments = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+  const defaultPaymentDate = `${activeMonth || today().slice(0, 7)}-01`;
 
   return (
     <section className="panel" id="planning">
@@ -1057,12 +1268,12 @@ function PaymentPlanner({ payments, onSubmit, onRemove }) {
           event.preventDefault();
           onSubmit(new FormData(event.currentTarget));
           event.currentTarget.reset();
-          event.currentTarget.date.value = today();
+          event.currentTarget.date.value = defaultPaymentDate;
         }}
       >
         <label>
           Date
-          <input name="date" type="date" defaultValue={today()} required />
+          <input name="date" type="date" defaultValue={defaultPaymentDate} required />
         </label>
         <label>
           Name
@@ -1106,12 +1317,89 @@ function PaymentPlanner({ payments, onSubmit, onRemove }) {
             ) : (
               <tr>
                 <td colSpan="5" className="empty-state">
-                  Schedule rent, subscriptions, credit card payments, and other future obligations.
+                  No planned payments for this month yet.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+    </section>
+  );
+}
+
+function RemindersPanel({ reminders, activeMonth, onSubmit, onComplete, onRemove }) {
+  const sortedReminders = [...reminders].sort((a, b) => {
+    if (Boolean(a.completedAt) !== Boolean(b.completedAt)) return a.completedAt ? 1 : -1;
+    return a.dueDate.localeCompare(b.dueDate);
+  });
+  const defaultDueDate = addDays(today(), 30);
+  const canNotify = "Notification" in window;
+
+  return (
+    <section className="panel" id="reminders">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Alerts</p>
+          <h2>Reminders</h2>
+        </div>
+        {canNotify ? (
+          <button type="button" className="text-button" onClick={requestReminderPermission}>
+            Enable notifications
+          </button>
+        ) : null}
+      </div>
+      <form
+        className="form-grid reminders"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(new FormData(event.currentTarget));
+          event.currentTarget.reset();
+          event.currentTarget.dueDate.value = defaultDueDate;
+        }}
+      >
+        <label>
+          Due date
+          <input name="dueDate" type="date" defaultValue={defaultDueDate} required />
+        </label>
+        <label>
+          Reminder
+          <input name="title" type="text" placeholder="Check this bank card" required />
+        </label>
+        <label className="wide">
+          Context
+          <input name="note" type="text" placeholder="Look at tax returns, review APR, call bank, etc." />
+        </label>
+        <button type="submit">Add reminder</button>
+      </form>
+      <p className="helper-copy">
+        Browser notifications work while Ledgerly is open. Deployed iPhone/desktop push notifications will use the same reminder data later.
+      </p>
+      <div className="reminder-list">
+        {sortedReminders.length ? (
+          sortedReminders.map((reminder) => {
+            const due = reminder.dueDate <= today() && !reminder.completedAt;
+            return (
+              <div className={`reminder-row${due ? " due" : ""}${reminder.completedAt ? " done" : ""}`} key={reminder.id}>
+                <button type="button" className="check-button" onClick={() => onComplete(reminder.id)} aria-label="Toggle reminder">
+                  {reminder.completedAt ? "✓" : ""}
+                </button>
+                <div>
+                  <strong>{reminder.title}</strong>
+                  <span>
+                    {due ? "Due now" : `Due ${formatDate(reminder.dueDate)}`}
+                    {reminder.note ? ` - ${reminder.note}` : ""}
+                  </span>
+                </div>
+                <button className="delete-button" type="button" onClick={() => onRemove(reminder.id)} aria-label="Delete reminder">
+                  x
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div className="empty-state">No reminders for {activeMonth} yet.</div>
+        )}
       </div>
     </section>
   );
@@ -1259,6 +1547,44 @@ function addMonths(isoDate, months) {
   return date.toISOString().slice(0, 10);
 }
 
+function addDays(isoDate, days) {
+  const date = new Date(`${isoDate}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftMonth(month, offset) {
+  return addMonths(`${month}-01`, offset).slice(0, 7);
+}
+
+async function requestReminderPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+}
+
+function notifyDueReminders(reminders, setLocalState) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const dueReminders = reminders.filter((reminder) => !reminder.completedAt && !reminder.notifiedAt && reminder.dueDate <= today());
+  if (!dueReminders.length) return;
+
+  dueReminders.forEach((reminder) => {
+    new Notification("Ledgerly reminder", {
+      body: reminder.note ? `${reminder.title} - ${reminder.note}` : reminder.title,
+      tag: `ledgerly-reminder-${reminder.id}`,
+    });
+  });
+
+  const notifiedAt = new Date().toISOString();
+  setLocalState((current) => ({
+    ...current,
+    reminders: current.reminders.map((reminder) =>
+      dueReminders.some((dueReminder) => dueReminder.id === reminder.id) ? { ...reminder, notifiedAt } : reminder,
+    ),
+  }));
+}
+
 function loadPlaidLinkScript() {
   if (window.Plaid) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -1306,19 +1632,18 @@ function friendlyError(error) {
   }
 }
 
-function parseExpenseMessage(text, receipt) {
+function parseExpenseMessage(text) {
   const amountMatch = text.match(/(?:\$|for\s+)?(\d+(?:\.\d{1,2})?)/i);
   const amount = amountMatch ? Number(amountMatch[1]) : 0;
   const merchant = inferMerchant(text, amountMatch?.[0]);
   const category = inferCategory(text, merchant);
-  const receiptNote = receipt ? `Receipt attached: ${receipt.name}` : "";
 
   return {
     date: inferDate(text),
     merchant,
     category,
     amount,
-    note: [text, receiptNote].filter(Boolean).join(" | "),
+    note: text,
   };
 }
 
